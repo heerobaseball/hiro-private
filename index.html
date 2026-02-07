@@ -3,36 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Private Dashboard</title>
+    <title>My Private Space</title>
     <style>
-        body { font-family: sans-serif; padding: 2rem; }
-        .card { border: 1px solid #ccc; padding: 1rem; border-radius: 8px; }
+        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; color: #333; }
+        .card { border: 1px solid #ddd; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        h1 { margin-top: 0; font-size: 1.5rem; }
+        .btn { display: inline-block; background: #0070f3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+        .btn:hover { background: #0051a2; }
     </style>
 </head>
 <body>
-    <h1>マイ・ダッシュボード</h1>
+    <div class="card">
+        <h1>ようこそ、マイページへ</h1>
+        <p>GitHub連携によるデプロイ成功です！</p>
+        <p>サーバー時刻: <span id="time">読み込み中...</span></p>
+    </div>
     
     <div class="card">
-        <h3>サーバー時刻 (APIテスト)</h3>
-        <p id="server-time">読み込み中...</p>
+        <h3>リンク集</h3>
+        <ul>
+            <li><a href="https://google.com" target="_blank">Google</a></li>
+            <li><a href="https://github.com" target="_blank">GitHub</a></li>
+        </ul>
     </div>
 
     <script>
-        // functions/time.js を呼び出す
         fetch('/time')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('APIエラー: ' + response.status);
-                }
-                return response.json();
-            })
-            .then(data => {
-                // 画面の文字を書き換える
-                document.getElementById('server-time').innerText = data.message;
-            })
-            .catch(err => {
-                document.getElementById('server-time').innerText = "エラーが発生しました: " + err.message;
-            });
+            .then(r => r.json())
+            .then(d => document.getElementById('time').innerText = d.message)
+            .catch(e => document.getElementById('time').innerText = "APIエラー");
     </script>
 </body>
 </html>
