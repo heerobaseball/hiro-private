@@ -3,37 +3,136 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Private Space</title>
+    <title>My Dashboard</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; color: #333; }
-        .card { border: 1px solid #ddd; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        h1 { margin-top: 0; font-size: 1.5rem; }
-        .btn { display: inline-block; background: #0070f3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
-        .btn:hover { background: #0051a2; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f0f2f5; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { margin-top: 0; font-size: 1.2rem; color: #555; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        
+        /* 時計のスタイル */
+        #clock-container { text-align: center; }
+        #date { font-size: 1.2rem; color: #666; }
+        #time { font-size: 3rem; font-weight: bold; color: #0070f3; line-height: 1.2; font-variant-numeric: tabular-nums; }
+
+        /* ニュースリストのスタイル */
+        ul.news-list { list-style: none; padding: 0; margin: 0; }
+        ul.news-list li { padding: 10px 0; border-bottom: 1px solid #eee; }
+        ul.news-list li:last-child { border-bottom: none; }
+        ul.news-list a { text-decoration: none; color: #333; display: block; }
+        ul.news-list a:hover { color: #0070f3; }
+        .news-date { font-size: 0.8rem; color: #999; margin-right: 10px; }
+
+        /* レスポンシブ対応（スマホ用） */
+        @media (max-width: 600px) {
+            #time { font-size: 2.5rem; }
+            body { padding: 10px; }
+        }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>Hiro's my Page</h1>
-        <p>サーバー時刻: <span id="time" style="font-weight:bold; color:#0070f3;">読み込み中...</span></p>
+
+    <div class="card" id="clock-container">
+        <div id="date">Loading...</div>
+        <div id="time">00:00:00</div>
     </div>
-    
+
     <div class="card">
-        <h3>リンク集</h3>
-        <ul>
-            <li><a href="https://google.com" target="_blank">Google</a></li>
-            <li><a href="https://github.com" target="_blank">GitHub</a></li>
+        <h2>マーケット情報</h2>
+        <div class="tradingview-widget-container">
+            <div class="tradingview-widget-container__widget"></div>
+            <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>
+            {
+            "width": "100%",
+            "height": 350,
+            "symbolsGroups": [
+                {
+                "name": "Indices & Forex",
+                "originalName": "Indices",
+                "symbols": [
+                    { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
+                    { "name": "TVC:TOPIX", "displayName": "TOPIX" },
+                    { "name": "AMEX:VOO", "displayName": "VOO (S&P500 ETF)" },
+                    { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" }
+                ]
+                }
+            ],
+            "showSymbolLogo": true,
+            "isTransparent": true,
+            "colorTheme": "light",
+            "locale": "ja"
+            }
+            </script>
+        </div>
+        </div>
+
+    <div class="card">
+        <h2>最新ニュース (Yahoo! Topics)</h2>
+        <ul id="news-list" class="news-list">
+            <li>読み込み中...</li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h2>リンク集</h2>
+        <ul class="news-list">
+            <li><a href="https://mail.google.com/" target="_blank">📧 Gmail</a></li>
+            <li><a href="https://calendar.google.com/" target="_blank">📅 Google Calendar</a></li>
         </ul>
     </div>
 
     <script>
-        // 時刻を取得して表示する関数を作成
-        function fetchTime() {
-            fetch('/time')
-                .then(r => r.json())
-                .then(d => {
-                    // 取得したメッセージを表示
-                    document.getElementById('time').innerText = d.message;
-                })
-                .catch(e => {
-                    document.getElementById('time').innerText = "API
+        // --- 機能1: 時計 (リアルタイム秒表示) ---
+        function updateClock() {
+            const now = new Date();
+            // 日付: 202X年X月X日(曜)
+            const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' };
+            document.getElementById('date').innerText = now.toLocaleDateString('ja-JP', dateOptions);
+            
+            // 時刻: HH:MM:SS (0埋め)
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('time').innerText = `${h}:${m}:${s}`;
+        }
+        setInterval(updateClock, 1000); // 1秒ごとに更新
+        updateClock(); // 初回実行
+
+        // --- 機能3: ニュース取得 (自作API経由) ---
+        async function fetchNews() {
+            const list = document.getElementById('news-list');
+            try {
+                // functions/news.js を呼び出す
+                const res = await fetch('/news');
+                if (!res.ok) throw new Error('Network response was not ok');
+                
+                // XMLテキストとして受け取る
+                const text = await res.text();
+                
+                // XMLを解析する
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(text, "text/xml");
+                const items = xmlDoc.querySelectorAll("item");
+
+                list.innerHTML = ""; // 「読み込み中」を消す
+
+                // 記事をループして表示（最大5件）
+                items.forEach((item, index) => {
+                    if (index >= 5) return; // 5件まで
+                    const title = item.querySelector("title").textContent;
+                    const link = item.querySelector("link").textContent;
+                    
+                    // リストに追加
+                    const li = document.createElement("li");
+                    li.innerHTML = `<a href="${link}" target="_blank">${title}</a>`;
+                    list.appendChild(li);
+                });
+
+            } catch (error) {
+                console.error(error);
+                list.innerHTML = "<li>ニュースの読み込みに失敗しました</li>";
+            }
+        }
+        fetchNews();
+    </script>
+</body>
+</html>
