@@ -14,9 +14,8 @@
 </head>
 <body>
     <div class="card">
-        <h1>ようこそ、マイページへ</h1>
-        <p>GitHub連携によるデプロイ成功です！</p>
-        <p>サーバー時刻: <span id="time">読み込み中...</span></p>
+        <h1>Hiro's my Page</h1>
+        <p>サーバー時刻: <span id="time" style="font-weight:bold; color:#0070f3;">読み込み中...</span></p>
     </div>
     
     <div class="card">
@@ -28,10 +27,13 @@
     </div>
 
     <script>
-        fetch('/time')
-            .then(r => r.json())
-            .then(d => document.getElementById('time').innerText = d.message)
-            .catch(e => document.getElementById('time').innerText = "APIエラー");
-    </script>
-</body>
-</html>
+        // 時刻を取得して表示する関数を作成
+        function fetchTime() {
+            fetch('/time')
+                .then(r => r.json())
+                .then(d => {
+                    // 取得したメッセージを表示
+                    document.getElementById('time').innerText = d.message;
+                })
+                .catch(e => {
+                    document.getElementById('time').innerText = "API
