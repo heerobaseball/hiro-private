@@ -1,138 +1,138 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Private Space</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f0f2f5; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        h2 { margin-top: 0; font-size: 1.2rem; color: #555; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
-        
-        /* 時計のスタイル */
-        #clock-container { text-align: center; }
-        #date { font-size: 1.2rem; color: #666; }
-        #time { font-size: 3rem; font-weight: bold; color: #0070f3; line-height: 1.2; font-variant-numeric: tabular-nums; }
-
-        /* ニュースリストのスタイル */
-        ul.news-list { list-style: none; padding: 0; margin: 0; }
-        ul.news-list li { padding: 10px 0; border-bottom: 1px solid #eee; }
-        ul.news-list li:last-child { border-bottom: none; }
-        ul.news-list a { text-decoration: none; color: #333; display: block; }
-        ul.news-list a:hover { color: #0070f3; }
-        .news-date { font-size: 0.8rem; color: #999; margin-right: 10px; }
-
-        /* レスポンシブ対応（スマホ用） */
-        @media (max-width: 600px) {
-            #time { font-size: 2.5rem; }
-            body { padding: 10px; }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>個人サイト向けシンプル無料ホームページテンプレート tp_simple7</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="ここにサイト説明を入れます">
+<meta name="keywords" content="キーワード１,キーワード２,キーワード３,キーワード４,キーワード５">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/openclose.js"></script>
+<script src="js/fixmenu_pagetop.js"></script>
 </head>
+
 <body>
 
-    <div class="card" id="clock-container">
-        <div id="date">Loading...</div>
-        <div id="time">00:00:00</div>
-    </div>
+<div id="container">
 
-    <div class="card">
-        <h2>マーケット情報</h2>
-        <div class="tradingview-widget-container">
-            <div class="tradingview-widget-container__widget"></div>
-            <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>
-            {
-            "width": "100%",
-            "height": 350,
-            "symbolsGroups": [
-                {
-                "name": "Indices & Forex",
-                "originalName": "Indices",
-                "symbols": [
-                    { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
-                    { "name": "TVC:TOPIX", "displayName": "TOPIX" },
-                    { "name": "AMEX:VOO", "displayName": "VOO (S&P500 ETF)" },
-                    { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" }
-                ]
-                }
-            ],
-            "showSymbolLogo": true,
-            "isTransparent": true,
-            "colorTheme": "light",
-            "locale": "ja"
-            }
-            </script>
-        </div>
-        </div>
+<header>
+<h1 id="logo"><a href="index.html"><img src="images/logo.png" alt="SAMPLE WEB SITE"></a></h1>
+<!--スライドショー-->
+<aside id="mainimg">
+<img src="images/1.jpg" alt="" class="slide0">
+<img src="images/1.jpg" alt="" class="slide1">
+<img src="images/2.jpg" alt="" class="slide2">
+<img src="images/3.jpg" alt="" class="slide3">
+</aside>
+</header>
 
-    <div class="card">
-        <h2>最新ニュース (Yahoo! Topics)</h2>
-        <ul id="news-list" class="news-list">
-            <li>読み込み中...</li>
-        </ul>
-    </div>
+<div id="contents">
 
-    <div class="card">
-        <h2>リンク集</h2>
-        <ul class="news-list">
-            <li><a href="https://mail.google.com/" target="_blank">📧 Gmail</a></li>
-            <li><a href="https://calendar.google.com/" target="_blank">📅 Google Calendar</a></li>
-        </ul>
-    </div>
+<div id="main">
 
-    <script>
-        // --- 機能1: 時計 (リアルタイム秒表示) ---
-        function updateClock() {
-            const now = new Date();
-            // 日付: 202X年X月X日(曜)
-            const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' };
-            document.getElementById('date').innerText = now.toLocaleDateString('ja-JP', dateOptions);
-            
-            // 時刻: HH:MM:SS (0埋め)
-            const h = String(now.getHours()).padStart(2, '0');
-            const m = String(now.getMinutes()).padStart(2, '0');
-            const s = String(now.getSeconds()).padStart(2, '0');
-            document.getElementById('time').innerText = `${h}:${m}:${s}`;
-        }
-        setInterval(updateClock, 1000); // 1秒ごとに更新
-        updateClock(); // 初回実行
+<section id="new">
+<h2>更新情報・お知らせ</h2>
+<dl>
+<dt>2021/11/16</dt>
+<dd>lightbox用のjsファイルとcssファイルをCDNからの読み込みに変更。<span class="newicon">NEW</span></dd>
+<dt>2019/02/25</dt>
+<dd>html,cssなど全面リニューアル。旧ファイルが必要な場合はお問い合わせ下さい。</dd>
+<dt>2014/09/05</dt>
+<dd>tp_simple7配布開始。</dd>
+<dt>20XX/00/00</dt>
+<dd>サンプルテキスト。サンプルテキスト。サンプルテキスト。</dd>
+<dt>20XX/00/00</dt>
+<dd>サンプルテキスト。サンプルテキスト。サンプルテキスト。</dd>
+<dt>20XX/00/00</dt>
+<dd>サンプルテキスト。サンプルテキスト。サンプルテキスト。</dd>
+<dt>20XX/00/00</dt>
+<dd>サンプルテキスト。サンプルテキスト。サンプルテキスト。</dd>
+<dt>20XX/00/00</dt>
+<dd>サンプルテキスト。サンプルテキスト。サンプルテキスト。</dd>
+<dt>20XX/00/00</dt>
+<dd>サンプルテキスト。サンプルテキスト。サンプルテキスト。</dd>
+</dl>
+<p class="r">&raquo;&nbsp;<a href="#">過去ログ</a></p>
+</section>
 
-        // --- 機能3: ニュース取得 (自作API経由) ---
-        async function fetchNews() {
-            const list = document.getElementById('news-list');
-            try {
-                // functions/news.js を呼び出す
-                const res = await fetch('/news');
-                if (!res.ok) throw new Error('Network response was not ok');
-                
-                // XMLテキストとして受け取る
-                const text = await res.text();
-                
-                // XMLを解析する
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(text, "text/xml");
-                const items = xmlDoc.querySelectorAll("item");
+<section>
 
-                list.innerHTML = ""; // 「読み込み中」を消す
+<h2>テンプレートのご利用前に必ずお読み下さい</h2>
 
-                // 記事をループして表示（最大5件）
-                items.forEach((item, index) => {
-                    if (index >= 5) return; // 5件まで
-                    const title = item.querySelector("title").textContent;
-                    const link = item.querySelector("link").textContent;
-                    
-                    // リストに追加
-                    const li = document.createElement("li");
-                    li.innerHTML = `<a href="${link}" target="_blank">${title}</a>`;
-                    list.appendChild(li);
-                });
+<h3>利用規約のご案内</h3>
+<p>このテンプレートは、<a href="https://template-party.com/">Template Party</a>にて無料配布している『個人サイト向けシンプル無料ホームページテンプレート tp_simple7』です。必ずダウンロード先のサイトの<a href="https://template-party.com/read.html">利用規約</a>をご一読の上でご利用下さい。</p>
+<p><strong class="color1">■HP最下部の著作表示『Web Design:Template-Party』は無断で削除しないで下さい。</strong><br>
+わざと見えなく加工する事も禁止です。</p>
+<p><strong class="color1">■下部の著作を外したい場合は</strong><br>
+<a href="https://template-party.com/">Template-Party</a>の<a href="https://template-party.com/member.html">ライセンス契約</a>を行う事でHP下部の著作を外す事ができます。</p>
 
-            } catch (error) {
-                console.error(error);
-                list.innerHTML = "<li>ニュースの読み込みに失敗しました</li>";
-            }
-        }
-        fetchNews();
-    </script>
+<h3>テンプレートに梱包されているjavascriptファイル（jsファイル）について</h3>
+<p>当テンプレートに梱包されている、fixmenu_pagetop.js、openclose.jsは、<a href="https://www.crytus.info/" target="_blank">クリタス様</a>提供のものです。これらのファイルは改変せずにご利用下さい。<br>
+また、当サイトのテンプレート「以外」に使いたいなど、「プログラムのみ」を使う場合は<a href="https://template-party.com/free_program/openclose_license.html">こちらの規約</a>をお守り下さい。</p>
+
+<h3>当テンプレートの詳しい使い方は</h3>
+<p><a href="about.html">こちらをご覧下さい。</a></p>
+
+</section>
+
+</div>
+<!--/#main-->
+
+<div id="sub">
+
+<!--PC用（801px以上端末）メニュー-->
+<nav id="menubar">
+<h2>Contents</h2>
+<ul>
+<li><a href="index.html">HOME</a></li>
+<li><a href="about.html">ABOUT</a></li>
+<li><a href="gallery.html">GALLERY</a></li>
+<li><a href="link.html">LINK</a></li>
+</ul>
+</nav>
+
+<p><a href="#"><img src="images/banner1.jpg" alt="採用情報" class="pc"></a>
+<a href="#"><img src="images/banner1_sh.jpg" alt="採用情報" class="sh"></a></p>
+<p>上のバナー画像は、801px以上の端末と800px以下とで画像２種類が切り替わります。<br>
+<a href="about.html#banner">詳しい説明はこちら。</a></p>
+
+</div>
+<!--/#sub-->
+
+</div>
+<!--/#contents-->
+
+</div>
+<!--/#container-->
+
+<footer>
+<small>Copyright&copy; <a href="index.html">SAMPLE WEB SITE</a> All Rights Reserved.</small>
+<span class="pr"><a href="http://template-party.com/" target="_blank">《Web Design:Template-Party》</a></span>
+</footer>
+
+<!--小さな端末用（800px以下端末）メニュー-->
+<nav id="menubar-s">
+<ul>
+<li><a href="index.html">HOME</a></li>
+<li><a href="about.html">ABOUT</a></li>
+<li><a href="gallery.html">GALLERY</a></li>
+<li><a href="link.html">LINK</a></li>
+</ul>
+</nav>
+
+<!--ページの上部に戻る「↑」ボタン-->
+<p class="nav-fix-pos-pagetop"><a href="#">↑</a></p>
+
+<!--メニュー開閉ボタン-->
+<div id="menubar_hdr" class="close"></div>
+
+<!--メニューの開閉処理条件設定　800px以下-->
+<script>
+if (OCwindowWidth() <= 800) {
+	open_close("menubar_hdr", "menubar-s");
+}
+</script>
+
 </body>
 </html>

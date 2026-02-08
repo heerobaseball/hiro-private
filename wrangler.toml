@@ -1,0 +1,14 @@
+name = "hiro-private"
+pages_build_output_dir = "."
+compatibility_date = "2024-01-01"
+
+# データベース設定
+[[d1_databases]]
+binding = "DB"
+database_name = "my-db"
+database_id = "25f65336-485f-4cb8-8186-64d051e91de3"
+
+# 画像ストレージ設定
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "my-images"
