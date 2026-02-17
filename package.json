@@ -1,4 +1,23 @@
 {
+  "name": "sitepage",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/heerobaseball/hiro-private.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/heerobaseball/hiro-private/issues"
+  },
+  "homepage": "https://github.com/heerobaseball/hiro-private#readme",
   "dependencies": {
     "hono": "^4.11.9"
   }
