@@ -84,14 +84,21 @@ app.get('/', async (c) => {
             <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>
             {
               "width": "100%",
-              "height": 400,
+              "height": 550,
               "symbolsGroups": [
                 {
-                  "name": "Indices",
+                  "name": "Watchlist",
                   "symbols": [
                     { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
-                    { "name": "TVC:TOPIX", "displayName": "TOPIX" },
-                    { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" }
+                    { "name": "AMEX:VOO", "displayName": "VOO" },
+                    { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
+                    { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
+                    { "name": "TSE:4755", "displayName": "楽天グループ" },
+                    { "name": "TSE:9432", "displayName": "NTT" },
+                    { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
+                    { "name": "BITSTAMP:ETHUSD", "displayName": "ETH/USD" },
+                    { "name": "BITSTAMP:XRPUSD", "displayName": "XRP/USD" },
+                    { "name": "COINBASE:SHIBUSD", "displayName": "SHIB/USD" }
                   ]
                 }
               ],
