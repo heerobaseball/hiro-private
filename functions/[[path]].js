@@ -49,7 +49,7 @@ async function fetchGoogleNews() {
     const response = await fetch(rssUrl);
     const text = await response.text();
     
-    // 簡易的なXML解析 (正規表現でタイトルとリンクを抽出)
+    // 簡易的なXML解析
     const items = [];
     const regex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>/g;
     let match;
@@ -65,9 +65,9 @@ async function fetchGoogleNews() {
 
 // --- 3. ルート定義 ---
 
-// 【トップページ】ダッシュボード (株価 + ニュース + 最新日記)
+// 【トップページ】ダッシュボード
 app.get('/', async (c) => {
-  // 並行してデータ取得 (高速化)
+  // 並行してデータ取得
   const [news, dbResult] = await Promise.all([
     fetchGoogleNews(),
     c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 3').all()
@@ -108,7 +108,7 @@ app.get('/', async (c) => {
           <div class="card">
             ${news.map(item => html`
               <div class="news-item">
-                <a href="${item.link}" target="_blank">Example News Title ${item.title}</a>
+                <a href="${item.link}" target="_blank">${item.title}</a>
               </div>
             `)}
           </div>
@@ -132,7 +132,7 @@ app.get('/', async (c) => {
   }));
 });
 
-// 【日記一覧ページ】全ての記録を表示
+// 【日記一覧ページ】
 app.get('/diary', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC').all();
   
@@ -153,8 +153,60 @@ app.get('/diary', async (c) => {
   }));
 });
 
-// 【投稿ページ】フォームを表示
+// 【投稿ページ】
 app.get('/diary/post', (c) => {
   return c.html(Layout({
     title: '新規投稿',
-    children: html
+    children: html`
+      <article>
+        <header>✍️ 新しい記録を追加</header>
+        <form method="POST" action="/diary/post" enctype="multipart/form-data">
+          <label>
+            内容
+            <textarea name="content" rows="5" required placeholder="いまどうしてる？"></textarea>
+          </label>
+          <label>
+            写真 (任意)
+            <input type="file" name="image" accept="image/*">
+          </label>
+          <button type="submit">保存する</button>
+        </form>
+      </article>
+    `
+  }));
+});
+
+// 【投稿処理】
+app.post('/diary/post', async (c) => {
+  const body = await c.req.parseBody();
+  const content = body['content'];
+  const imageFile = body['image'];
+  let imageUrl = null;
+
+  if (imageFile instanceof File && imageFile.size > 0) {
+    const fileName = `${Date.now()}-${imageFile.name}`;
+    await c.env.BUCKET.put(fileName, await imageFile.arrayBuffer(), {
+      httpMetadata: { contentType: imageFile.type }
+    });
+    imageUrl = `/images/${fileName}`;
+  }
+
+  await c.env.DB.prepare(
+    'INSERT INTO notes (content, image_url, created_at) VALUES (?, ?, ?)'
+  ).bind(content, imageUrl, Date.now()).run();
+
+  return c.redirect('/diary');
+});
+
+// 【画像表示用】
+app.get('/images/:key', async (c) => {
+  const object = await c.env.BUCKET.get(c.req.param('key'));
+  if (!object) return c.text('Not Found', 404);
+  
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('etag', object.httpEtag);
+  return new Response(object.body, { headers });
+});
+
+export const onRequest = handle(app);
