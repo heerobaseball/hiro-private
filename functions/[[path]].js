@@ -21,6 +21,7 @@ const Layout = (props) => html`
     .news-item { font-size: 0.9rem; margin-bottom: 0.5rem; border-bottom: 1px solid #f0f0f0; padding-bottom: 0.5rem; }
     .news-item a { text-decoration: none; color: #333; }
     .news-item a:hover { color: #0070f3; }
+    .source-tag { font-size: 0.7rem; color: #666; margin-left: 5px; background: #eee; padding: 2px 5px; border-radius: 4px; }
     img { max-width: 100%; height: auto; border-radius: 4px; }
   </style>
 </head>
@@ -42,24 +43,33 @@ const Layout = (props) => html`
 </html>
 `;
 
-// --- 2. ニュースを取得する便利関数 ---
+// --- 2. ニュースを取得する便利関数 (指定4サイトに限定) ---
 async function fetchGoogleNews() {
   try {
-    const rssUrl = "https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja";
+    // 検索クエリ: 日本経済新聞 OR ロイター OR Bloomberg OR tenki.jp
+    const query = "site:nikkei.com OR site:jp.reuters.com OR site:bloomberg.co.jp OR site:tenki.jp";
+    // エンコード
+    const encodedQuery = encodeURIComponent(query);
+    const rssUrl = `https://news.google.com/rss/search?q=${encodedQuery}&hl=ja&gl=JP&ceid=JP:ja`;
+    
     const response = await fetch(rssUrl);
     const text = await response.text();
     
     // 簡易的なXML解析
     const items = [];
-    const regex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>/g;
+    const regex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<source.*?>(.*?)<\/source>/g;
     let match;
     while ((match = regex.exec(text)) !== null) {
-      if (items.length >= 8) break; // 8件まで
-      items.push({ title: match[1], link: match[2] });
+      if (items.length >= 10) break; // 10件まで
+      items.push({ 
+        title: match[1], 
+        link: match[2],
+        source: match[3] // ニュース提供元も取得
+      });
     }
     return items;
   } catch (e) {
-    return [{ title: "ニュースの取得に失敗しました", link: "#" }];
+    return [{ title: "ニュースの取得に失敗しました", link: "#", source: "" }];
   }
 }
 
@@ -91,10 +101,7 @@ app.get('/', async (c) => {
                   "symbols": [
                     { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
                     { "name": "AMEX:VOO", "displayName": "VOO" },
-                    { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
                     { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
-                    { "name": "TSE:4755", "displayName": "楽天グループ" },
-                    { "name": "TSE:9432", "displayName": "NTT" },
                     { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
                     { "name": "BITSTAMP:ETHUSD", "displayName": "ETH/USD" },
                     { "name": "BITSTAMP:XRPUSD", "displayName": "XRP/USD" },
@@ -111,11 +118,15 @@ app.get('/', async (c) => {
         </div>
 
         <div>
-          <h3>📰 今日のニュース</h3>
+          <h3>📰 Select News</h3>
+          <p><small>Sources: 日経, Reuters, Bloomberg, tenki.jp</small></p>
           <div class="card">
             ${news.map(item => html`
               <div class="news-item">
-                <a href="${item.link}" target="_blank">${item.title}</a>
+                <a href="${item.link}" target="_blank">
+                  ${item.title.replace(` - ${item.source}`, '')}
+                  ${item.source ? html`<span class="source-tag">${item.source}</span>` : ''}
+                </a>
               </div>
             `)}
           </div>
