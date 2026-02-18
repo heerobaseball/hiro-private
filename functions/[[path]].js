@@ -119,7 +119,13 @@ app.get('/', async (c) => {
           <h3>📅 スケジュール</h3>
           <div class="card" style="padding:0; overflow:hidden;">
             <div style="padding:20px; text-align:center; color:#888;">
-              <iframe src="https://calendar.google.com/calendar/embed?src=heero.baseball%40gmail.com&ctz=Asia%2FTokyo" style="border: 0" width="800" height="600" frameborder="0" scrolling="no"></iframe>
+              <iframe src="https://calendar.google.com/calendar/embed?src=heero.baseball%40gmail.com&ctz=Asia%2FTokyo" 
+              style="border: 0" 
+              width="100%" 
+              height="300" 
+              frameborder="0" 
+              scrolling="no"
+              style="border: 0" width="800" height="600" frameborder="0" scrolling="no"></iframe>
             </div>
             </div>
 
