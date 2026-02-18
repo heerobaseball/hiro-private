@@ -92,10 +92,13 @@ app.get('/', async (c) => {
             {
               "width": "100%", "height": 350,
               "symbolsGroups": [{ "name": "Watchlist", "symbols": [
-                { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
-                { "name": "TVC:TOPIX", "displayName": "TOPIX" },
-                { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
-                { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" }
+                    { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
+                    { "name": "AMEX:VOO", "displayName": "VOO" },
+                    { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
+                    { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
+                    { "name": "BITSTAMP:ETHUSD", "displayName": "ETH/USD" },
+                    { "name": "BITSTAMP:XRPUSD", "displayName": "XRP/USD" },
+                    { "name": "COINBASE:SHIBUSD", "displayName": "SHIB/USD" }
               ]}],
               "colorTheme": "light", "locale": "ja"
             }
@@ -116,7 +119,7 @@ app.get('/', async (c) => {
           <h3>📅 スケジュール</h3>
           <div class="card" style="padding:0; overflow:hidden;">
             <div style="padding:20px; text-align:center; color:#888;">
-              ここにカレンダーのiframeコードを貼ると表示されます
+              <iframe src="https://calendar.google.com/calendar/embed?src=heero.baseball%40gmail.com&ctz=Asia%2FTokyo" style="border: 0" width="800" height="600" frameborder="0" scrolling="no"></iframe>
             </div>
             </div>
 
