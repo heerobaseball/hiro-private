@@ -14,3 +14,13 @@ CREATE TABLE IF NOT EXISTS assets (
   amount INTEGER,
   created_at INTEGER
 );
+
+/* (既存のnotesやassetsの記述はそのまま残してください) */
+
+DROP TABLE IF EXISTS todos;
+CREATE TABLE IF NOT EXISTS todos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task TEXT,
+  is_completed INTEGER DEFAULT 0,
+  created_at INTEGER
+);

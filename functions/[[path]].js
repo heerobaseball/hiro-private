@@ -4,7 +4,7 @@ import { html } from 'hono/html';
 
 const app = new Hono();
 
-// --- 共通レイアウト ---
+// --- 1. モダンな共通レイアウト (Bento UI) ---
 const Layout = (props) => html`
 <!DOCTYPE html>
 <html lang="ja">
@@ -12,43 +12,116 @@ const Layout = (props) => html`
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${props.title || 'My Dashboard'}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <style>
-    body { padding-top: 20px; max-width: 1100px; margin: 0 auto; background-color: #f4f4f9; }
-    .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    nav { margin-bottom: 2rem; border-bottom: 1px solid #eee; padding-bottom: 1rem; }
-    .grid-dashboard { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    @media (max-width: 768px) { .grid-dashboard { grid-template-columns: 1fr; } }
+  <style>
+    /* 全体の基本設定 */
+    :root {
+      --bg: #f3f4f6;
+      --card-bg: #ffffff;
+      --text-main: #1f2937;
+      --text-muted: #6b7280;
+      --border: #e5e7eb;
+      --primary: #3b82f6;
+      --radius: 16px;
+    }
+    body {
+      margin: 0; padding: 0;
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    a { text-decoration: none; color: inherit; }
     
-    .card { padding: 1rem; border: 1px solid #eee; border-radius: 8px; margin-bottom: 1rem; background: #fff; }
-    .news-item { font-size: 0.9rem; margin-bottom: 0.5rem; border-bottom: 1px solid #f0f0f0; padding-bottom: 0.5rem; }
-    .news-item a { text-decoration: none; color: #333; }
-    .source-tag { font-size: 0.7rem; color: #666; background: #eee; padding: 2px 5px; border-radius: 4px; }
+    /* 上部ナビゲーションバー */
+    .navbar {
+      display: flex; justify-content: space-between; align-items: center;
+      background: var(--card-bg);
+      padding: 0.8rem 2rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .nav-brand { font-size: 1.2rem; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+    .nav-links { display: flex; gap: 20px; }
+    .nav-links a { font-weight: 500; color: var(--text-muted); transition: color 0.2s; }
+    .nav-links a:hover, .nav-links a.active { color: var(--primary); }
     
-    /* チャット風UI */
-    .chat-box { max-height: 300px; overflow-y: auto; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ddd; }
-    .chat-message { margin-bottom: 10px; padding: 8px; border-radius: 8px; }
-    .user-msg { background: #e3f2fd; text-align: right; }
-    .ai-msg { background: #fff; border: 1px solid #eee; }
+    /* ダッシュボードのグリッド (Bento UI) */
+    .container {
+      max-width: 1400px; margin: 2rem auto; padding: 0 1rem;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+    
+    /* カード共通 */
+    .card {
+      background: var(--card-bg); border-radius: var(--radius); padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .card-header { font-size: 1.1rem; font-weight: bold; margin-bottom: 1rem; color: var(--text-main); }
+    
+    .col-span-3 { grid-column: span 3; }
+    .col-span-2 { grid-column: span 2; }
+    .col-span-1 { grid-column: span 1; }
+
+    @media (max-width: 1024px) { .container { grid-template-columns: repeat(2, 1fr); } .col-span-3 { grid-column: span 2; } }
+    @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .col-span-3, .col-span-2, .col-span-1 { grid-column: span 1; } }
+
+    /* 時計ウィジェット */
+    .clock-widget { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; text-align: center; }
+    .time-display { font-size: 3.5rem; font-weight: 800; color: var(--text-main); font-variant-numeric: tabular-nums; line-height: 1; margin: 10px 0; letter-spacing: -2px; }
+    .date-jp { font-size: 1.2rem; color: var(--text-muted); font-weight: 600; }
+    .koyomi-display { font-size: 0.9rem; color: var(--primary); background: #eff6ff; padding: 4px 12px; border-radius: 12px; margin-top: 8px; font-weight: 500; }
+
+    /* ToDoリスト */
+    .todo-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 200px; margin-bottom: 15px; }
+    .todo-item { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; background: var(--bg); transition: 0.2s; }
+    .todo-item:hover { background: #e5e7eb; }
+    .todo-check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--border); background: white; cursor: pointer; display:flex; align-items:center; justify-content:center; color: white; padding:0; }
+    .todo-check.done { background: var(--primary); border-color: var(--primary); }
+    .todo-text { flex-grow: 1; font-size: 0.95rem; }
+    .todo-text.done { text-decoration: line-through; color: var(--text-muted); }
+    .todo-delete { background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 1.2rem; font-weight: bold; padding: 0 5px; opacity: 0.5; }
+    .todo-delete:hover { opacity: 1; }
+    .todo-form { display: flex; gap: 10px; }
+    .todo-form input { flex-grow: 1; padding: 10px 15px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; }
+    .todo-form button { padding: 10px 20px; background: var(--text-main); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+
+    /* ニュース、Gemini、日記 (前回と同じスタイル) */
+    .news-list { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 350px; }
+    .news-item { font-size: 0.9rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .news-item a:hover { color: var(--primary); }
+    .source-tag { font-size: 0.7rem; color: var(--text-muted); background: var(--bg); padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+    .chat-box { flex-grow: 1; overflow-y: auto; max-height: 250px; background: var(--bg); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .chat-msg { padding: 8px 12px; border-radius: 12px; font-size: 0.9rem; max-width: 85%; }
+    .user-msg { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .ai-msg { background: white; color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
+    .chat-input-area { display: flex; gap: 8px; }
+    .chat-input-area input { flex-grow: 1; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+    .chat-input-area button { padding: 10px 16px; background: var(--text-main); color: white; border: none; border-radius: 8px; cursor: pointer; }
+    .diary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+    .diary-card { position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 4/3; background: var(--border); }
+    .diary-card img { width: 100%; height: 100%; object-fit: cover; }
+    .diary-card .overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); color: white; padding: 10px; font-size: 0.8rem; }
+    .diary-card.no-image { background: var(--bg); padding: 10px; display: flex; flex-direction: column; justify-content: space-between; }
+    .diary-card.no-image .overlay { position: static; background: none; color: var(--text-muted); padding: 0; }
   </style>
 </head>
 <body>
-  <main class="container">
-    <nav>
-      <ul><li><strong>My Dashboard</strong></li></ul>
-      <ul>
-        <li><a href="/">🏠 ホーム</a></li>
-        <li><a href="/diary">📖 日記</a></li>
-        <li><a role="button" href="/diary/post">✍️ 投稿</a></li>
-      </ul>
-    </nav>
-    ${props.children}
-  </main>
+  <header class="navbar">
+    <div class="nav-brand">My Dashboard</div>
+    <div class="nav-links">
+      <a href="/" class="active">ホーム</a>
+      <a href="/diary">日記</a>
+      <a href="/diary/post">投稿</a>
+    </div>
+  </header>
+  <main>${props.children}</main>
 </body>
 </html>
 `;
 
-// --- ニュース取得関数 ---
+// --- 2. ニュース取得 (日経, Reuters, Bloomberg, tenki.jp) ---
 async function fetchGoogleNews() {
   try {
     const query = "site:nikkei.com OR site:jp.reuters.com OR site:bloomberg.co.jp OR site:tenki.jp";
@@ -59,154 +132,181 @@ async function fetchGoogleNews() {
     const regex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<source.*?>(.*?)<\/source>/g;
     let match;
     while ((match = regex.exec(text)) !== null) {
-      if (items.length >= 6) break;
+      if (items.length >= 8) break;
       items.push({ title: match[1], link: match[2], source: match[3] });
     }
     return items;
   } catch (e) { return []; }
 }
 
-// --- 【トップページ】すべてを表示 ---
-app.get('/', async (c) => {
-  // 並行してデータ取得 (ニュース、日記、資産データ)
-  const [news, dbNotes, dbAssets] = await Promise.all([
-    fetchGoogleNews(),
-    c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 3').all(),
-    c.env.DB.prepare('SELECT * FROM assets ORDER BY record_date ASC').all()
-  ]);
+// --- 3. ルート定義 ---
 
-  // グラフ用のデータを配列に変換
-  const assetDates = JSON.stringify(dbAssets.results.map(a => a.record_date));
-  const assetAmounts = JSON.stringify(dbAssets.results.map(a => a.amount));
+// 【トップページ】
+app.get('/', async (c) => {
+  const [news, dbNotes, dbTodos] = await Promise.all([
+    fetchGoogleNews(),
+    c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 8').all(),
+    c.env.DB.prepare('SELECT * FROM todos ORDER BY is_completed ASC, created_at DESC').all()
+  ]);
 
   return c.html(Layout({
     title: 'ホーム - My Dashboard',
     children: html`
-      <div class="grid-dashboard">
+      <div class="container">
         
-        <div>
-          <h3>📈 マーケット</h3>
+        <div class="card col-span-1">
+          <div class="clock-widget">
+            <div class="date-jp" id="date-jp">--年--月--日</div>
+            <div class="time-display" id="time-display">--:--:--</div>
+            <div class="koyomi-display" id="koyomi-display">読込中...</div>
+          </div>
+        </div>
+
+        <div class="card col-span-2">
+          <div class="card-header">共有 ToDoリスト</div>
+          <div class="todo-list">
+            ${dbTodos.results.length === 0 ? html`<p style="color:var(--text-muted); font-size:0.9rem;">タスクはありません。今日も良い一日を！</p>` : ''}
+            ${dbTodos.results.map(todo => html`
+              <div class="todo-item">
+                <form method="POST" action="/todos/toggle" style="margin:0;">
+                  <input type="hidden" name="id" value="${todo.id}">
+                  <input type="hidden" name="current" value="${todo.is_completed}">
+                  <button type="submit" class="todo-check ${todo.is_completed ? 'done' : ''}">
+                    ${todo.is_completed ? '✓' : ''}
+                  </button>
+                </form>
+                <div class="todo-text ${todo.is_completed ? 'done' : ''}">${todo.task}</div>
+                <form method="POST" action="/todos/delete" style="margin:0;">
+                  <input type="hidden" name="id" value="${todo.id}">
+                  <button type="submit" class="todo-delete" title="削除">×</button>
+                </form>
+              </div>
+            `)}
+          </div>
+          <form class="todo-form" method="POST" action="/todos/add">
+            <input type="text" name="task" placeholder="新しいタスクや買い物メモを追加..." required>
+            <button type="submit">追加</button>
+          </form>
+        </div>
+
+        <div class="card col-span-1">
+          <div class="card-header">マーケット</div>
           <div class="tradingview-widget-container" style="height:350px;">
             <div class="tradingview-widget-container__widget"></div>
             <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>
             {
               "width": "100%", "height": 350,
-              "symbolsGroups": [{ "name": "Watchlist", "symbols": [
+              "symbolsGroups": [
+                {
+                  "name": "Watchlist",
+                  "symbols": [
                     { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
                     { "name": "AMEX:VOO", "displayName": "VOO" },
+                    { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
                     { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
+                    { "name": "TSE:4755", "displayName": "楽天グループ" },
+                    { "name": "TSE:9432", "displayName": "NTT" },
                     { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
                     { "name": "BITSTAMP:ETHUSD", "displayName": "ETH/USD" },
                     { "name": "BITSTAMP:XRPUSD", "displayName": "XRP/USD" },
                     { "name": "COINBASE:SHIBUSD", "displayName": "SHIB/USD" }
-              ]}],
-              "colorTheme": "light", "locale": "ja"
+                  ]
+                }
+              ],
+              "colorTheme": "dark", "isTransparent": true, "locale": "ja"
             }
             </script>
           </div>
-          
-          <h3 style="margin-top:20px;">📰 News</h3>
-          <div class="card">
+        </div>
+
+        <div class="card col-span-1">
+          <div class="card-header">スケジュール</div>
+          <iframe 
+            src="https://calendar.google.com/calendar/embed?src=あなたのカレンダーID&mode=AGENDA" 
+            style="border: 0" width="100%" height="350" frameborder="0" scrolling="no">
+          </iframe>
+          </div>
+
+        <div class="card col-span-1">
+          <div class="card-header">Gemini Chat</div>
+          <div id="chat-history" class="chat-box">
+            <div class="chat-msg ai-msg">こんにちは！何かお手伝いしましょうか？</div>
+          </div>
+          <form id="gemini-form" class="chat-input-area">
+            <input type="text" id="gemini-input" placeholder="メッセージを入力..." required>
+            <button type="submit">送信</button>
+          </form>
+        </div>
+
+        <div class="card col-span-1">
+          <div class="card-header">Latest News</div>
+          <div class="news-list">
             ${news.map(item => html`
               <div class="news-item">
-                <a href="${item.link}" target="_blank">${item.title.substring(0, 35)}... <span class="source-tag">${item.source}</span></a>
+                <a href="${item.link}" target="_blank">
+                  ${item.title.replace(` - ${item.source}`, '')}
+                  ${item.source ? html`<span class="source-tag">${item.source}</span>` : ''}
+                </a>
               </div>
             `)}
           </div>
         </div>
 
-        <div>
-          <h3>📅 スケジュール</h3>
-          <div class="card" style="padding:0; overflow:hidden;">
-            <div style="padding:20px; text-align:center; color:#888;">
-              <iframe src="https://calendar.google.com/calendar/embed?src=heero.baseball%40gmail.com&ctz=Asia%2FTokyo" 
-              style="border: 0" 
-              width="100%" 
-              height="300" 
-              frameborder="0" 
-              scrolling="no"
-              style="border: 0" width="800" height="600" frameborder="0" scrolling="no"></iframe>
-            </div>
-            </div>
-
-          <h3>🤖 Gemini Chat</h3>
-          <div class="card">
-            <div id="chat-history" class="chat-box">
-              <div class="chat-message ai-msg">こんにちは！何かお手伝いしましょうか？</div>
-            </div>
-            <form id="gemini-form" style="display:flex; gap:10px;">
-              <input type="text" id="gemini-input" name="prompt" placeholder="Geminiに質問..." required style="margin-bottom:0;">
-              <button type="submit" style="width:auto;">送信</button>
-            </form>
+        <div class="card col-span-2">
+          <div class="card-header">最新の記録</div>
+          <div class="diary-grid">
+            ${dbNotes.results.map(note => {
+              const dateStr = new Date(note.created_at).toISOString().split('T')[0];
+              if (note.image_url) {
+                return html`
+                  <a href="/diary" class="diary-card">
+                    <img src="${note.image_url}" loading="lazy">
+                    <div class="overlay"><div>${dateStr}</div></div>
+                  </a>
+                `;
+              } else {
+                return html`
+                  <a href="/diary" class="diary-card no-image">
+                    <div style="font-size:0.85rem; color:var(--text-main);">${note.content.substring(0, 40)}...</div>
+                    <div class="overlay">${dateStr}</div>
+                  </a>
+                `;
+              }
+            })}
           </div>
         </div>
-
-      </div>
-
-      <hr />
-
-      <h3>💰 資産推移</h3>
-      <div class="grid-dashboard">
-        <div class="card">
-          <canvas id="assetChart"></canvas>
-        </div>
-        <div class="card">
-          <h5>データ入力</h5>
-          <form method="POST" action="/assets/add">
-            <div class="grid">
-              <label>日付<input type="date" name="date" required value="${new Date().toISOString().split('T')[0]}"></label>
-              <label>総資産額 (円)<input type="number" name="amount" required></label>
-            </div>
-            <button type="submit">記録する</button>
-          </form>
-        </div>
-      </div>
-
-      <hr />
-
-      <h3>📝 最新の記録</h3>
-      <div class="grid">
-        ${dbNotes.results.map(note => html`
-          <article class="card">
-            <header><small>${new Date(note.created_at).toLocaleString('ja-JP')}</small></header>
-            <p>${note.content.substring(0, 50)}...</p>
-            <footer><a href="/diary">詳細</a></footer>
-          </article>
-        `)}
       </div>
 
       <script>
-        // --- 資産グラフ描画 ---
-        const ctx = document.getElementById('assetChart').getContext('2d');
-        new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: ${assetDates},
-            datasets: [{
-              label: '総資産推移',
-              data: ${assetAmounts},
-              borderColor: '#0070f3',
-              backgroundColor: 'rgba(0, 112, 243, 0.1)',
-              fill: true,
-              tension: 0.1
-            }]
-          },
-          options: { responsive: true }
-        });
+        // --- 1. 時計と暦のリアルタイム更新 ---
+        function updateClock() {
+          const now = new Date();
+          
+          // 時刻表示 (例: 14:30:05)
+          document.getElementById('time-display').textContent = now.toLocaleTimeString('ja-JP', { hour12: false });
+          
+          // 和暦表示 (例: 令和8年2月24日 (火))
+          const dateOptions = { era: 'long', year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' };
+          document.getElementById('date-jp').textContent = new Intl.DateTimeFormat('ja-JP-u-ca-japanese', dateOptions).format(now);
+          
+          // 暦の表示 (西暦と旧暦の月名)
+          const oldMonths = ['睦月', '如月', '弥生', '卯月', '皐月', '水無月', '文月', '葉月', '長月', '神無月', '霜月', '師走'];
+          document.getElementById('koyomi-display').textContent = \`西暦\${now.getFullYear()}年 / 旧暦: \${oldMonths[now.getMonth()]}\`;
+        }
+        setInterval(updateClock, 1000);
+        updateClock(); // 初回実行
 
-        // --- Geminiチャット処理 ---
+        // --- 2. Geminiチャット処理 ---
         document.getElementById('gemini-form').addEventListener('submit', async (e) => {
           e.preventDefault();
           const input = document.getElementById('gemini-input');
           const history = document.getElementById('chat-history');
           const prompt = input.value;
 
-          // ユーザーのメッセージを表示
-          history.innerHTML += \`<div class="chat-message user-msg">\${prompt}</div>\`;
+          history.innerHTML += \`<div class="chat-msg user-msg">\${prompt}</div>\`;
           input.value = '';
           history.scrollTop = history.scrollHeight;
 
-          // サーバーに送信
           try {
             const res = await fetch('/api/gemini', {
               method: 'POST',
@@ -214,10 +314,9 @@ app.get('/', async (c) => {
               body: JSON.stringify({ prompt })
             });
             const data = await res.json();
-            // AIの返答を表示
-            history.innerHTML += \`<div class="chat-message ai-msg">\${data.response}</div>\`;
+            history.innerHTML += \`<div class="chat-msg ai-msg">\${data.response}</div>\`;
           } catch (err) {
-            history.innerHTML += \`<div class="chat-message ai-msg" style="color:red;">エラーが発生しました</div>\`;
+            history.innerHTML += \`<div class="chat-msg ai-msg" style="color:red;">エラーが発生しました</div>\`;
           }
           history.scrollTop = history.scrollHeight;
         });
@@ -226,21 +325,31 @@ app.get('/', async (c) => {
   }));
 });
 
-// --- 資産データ保存処理 ---
-app.post('/assets/add', async (c) => {
+// --- ToDoリスト処理 ---
+app.post('/todos/add', async (c) => {
   const body = await c.req.parseBody();
-  await c.env.DB.prepare('INSERT INTO assets (record_date, amount, created_at) VALUES (?, ?, ?)')
-    .bind(body['date'], body['amount'], Date.now()).run();
+  await c.env.DB.prepare('INSERT INTO todos (task, created_at) VALUES (?, ?)').bind(body['task'], Date.now()).run();
   return c.redirect('/');
 });
 
-// --- Gemini API処理 (サーバー側) ---
+app.post('/todos/toggle', async (c) => {
+  const body = await c.req.parseBody();
+  const newStatus = body['current'] === '1' ? 0 : 1; // 1なら0に、0なら1に反転
+  await c.env.DB.prepare('UPDATE todos SET is_completed = ? WHERE id = ?').bind(newStatus, body['id']).run();
+  return c.redirect('/');
+});
+
+app.post('/todos/delete', async (c) => {
+  const body = await c.req.parseBody();
+  await c.env.DB.prepare('DELETE FROM todos WHERE id = ?').bind(body['id']).run();
+  return c.redirect('/');
+});
+
+// --- GeminiAPI、日記関連処理 (前と同じ機能) ---
 app.post('/api/gemini', async (c) => {
   const { prompt } = await c.req.json();
   const apiKey = c.env.GEMINI_API_KEY;
-  
   if (!apiKey) return c.json({ response: "APIキーが設定されていません" });
-
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     const response = await fetch(url, {
@@ -251,24 +360,70 @@ app.post('/api/gemini', async (c) => {
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "すみません、答えられません。";
     return c.json({ response: text });
-  } catch (e) {
-    return c.json({ response: "エラー: " + e.message });
-  }
+  } catch (e) { return c.json({ response: "エラー: " + e.message }); }
 });
 
-// --- 他のページ (日記一覧など) は以前と同じ ---
 app.get('/diary', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC').all();
   return c.html(Layout({
     title: '日記一覧',
     children: html`
-      <h2>📚 全ての記録</h2>
-      ${results.map(n => html`<article class="card"><p>${n.content}</p></article>`)}
+      <div class="container" style="display:block;">
+        <h2 style="margin-bottom: 20px;">全ての記録</h2>
+        ${results.map(note => html`
+          <div class="card" style="margin-bottom: 15px;">
+            <div style="font-weight:bold; color:var(--text-muted); font-size:0.9rem; margin-bottom:8px;">
+              ${new Date(note.created_at).toLocaleString('ja-JP')}
+            </div>
+            <p style="white-space: pre-wrap; margin:0;">${note.content}</p>
+            ${note.image_url ? html`<img src="${note.image_url}" style="margin-top:10px; border-radius:8px; max-width:300px;" />` : ''}
+          </div>
+        `)}
+      </div>
     `
   }));
 });
 
-// 投稿ページなどは省略せず、必要なら以前のコードを追加してください
-// (長くなるため、日記投稿機能部分は以前のものをそのまま残すか、再利用してください)
+app.get('/diary/post', (c) => {
+  return c.html(Layout({
+    title: '新規投稿',
+    children: html`
+      <div class="container" style="display:block; max-width:600px;">
+        <div class="card">
+          <div class="card-header">新しい記録を追加</div>
+          <form method="POST" action="/diary/post" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:15px;">
+            <textarea name="content" rows="6" required placeholder="いまどうしてる？" style="padding:10px; border:1px solid var(--border); border-radius:8px;"></textarea>
+            <input type="file" name="image" accept="image/*">
+            <button type="submit" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer;">保存する</button>
+          </form>
+        </div>
+      </div>
+    `
+  }));
+});
+
+app.post('/diary/post', async (c) => {
+  const body = await c.req.parseBody();
+  const content = body['content'];
+  const imageFile = body['image'];
+  let imageUrl = null;
+  if (imageFile instanceof File && imageFile.size > 0) {
+    const fileName = `${Date.now()}-${imageFile.name}`;
+    await c.env.BUCKET.put(fileName, await imageFile.arrayBuffer(), { httpMetadata: { contentType: imageFile.type } });
+    imageUrl = `/images/${fileName}`;
+  }
+  await c.env.DB.prepare('INSERT INTO notes (content, image_url, created_at) VALUES (?, ?, ?)')
+    .bind(content, imageUrl, Date.now()).run();
+  return c.redirect('/');
+});
+
+app.get('/images/:key', async (c) => {
+  const object = await c.env.BUCKET.get(c.req.param('key'));
+  if (!object) return c.text('Not Found', 404);
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('etag', object.httpEtag);
+  return new Response(object.body, { headers });
+});
 
 export const onRequest = handle(app);
