@@ -202,10 +202,7 @@ app.get('/', async (c) => {
                   "symbols": [
                     { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
                     { "name": "AMEX:VOO", "displayName": "VOO" },
-                    { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
                     { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
-                    { "name": "TSE:4755", "displayName": "楽天グループ" },
-                    { "name": "TSE:9432", "displayName": "NTT" },
                     { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
                     { "name": "BITSTAMP:ETHUSD", "displayName": "ETH/USD" },
                     { "name": "BITSTAMP:XRPUSD", "displayName": "XRP/USD" },
@@ -222,7 +219,7 @@ app.get('/', async (c) => {
         <div class="card col-span-1">
           <div class="card-header">スケジュール</div>
           <iframe 
-            src="https://calendar.google.com/calendar/embed?src=あなたのカレンダーID&mode=AGENDA" 
+            src="https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=Asia%2FTokyo&showPrint=0&src=aGVlcm8uYmFzZWJhbGxAZ21haWwuY29t&src=MTVrYTNuOXA0NGlwcjZrMDNtamRoMzk3MGNAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=MG81bzExMWh1MmF1c2xwbW92bjRtZHR1bzRAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=ZmFtaWx5MDc5NTE1NTgwMzEzNDMyMzMzMzNAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=a3UwdjVkMjg3amhra2l1YnRlNzhpaG0wOThAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=amEuamFwYW5lc2UjaG9saWRheUBncm91cC52LmNhbGVuZGFyLmdvb2dsZS5jb20&src=aHQzamxmYWFjNWxmZDYyNjN1bGZoNHRxbDhAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&color=%233f51b5&color=%23f6bf26&color=%23795548&color=%2333b679&color=%23d81b60&color=%23009688&color=%23b39ddb" 
             style="border: 0" width="100%" height="350" frameborder="0" scrolling="no">
           </iframe>
           </div>
