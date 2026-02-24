@@ -343,10 +343,13 @@ app.post('/todos/delete', async (c) => {
 });
 
 // --- GeminiAPI、日記関連処理 (前と同じ機能) ---
+// --- GeminiAPI処理 (エラー原因特定版) ---
 app.post('/api/gemini', async (c) => {
   const { prompt } = await c.req.json();
   const apiKey = c.env.GEMINI_API_KEY;
+  
   if (!apiKey) return c.json({ response: "APIキーが設定されていません" });
+  
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     const response = await fetch(url, {
@@ -354,10 +357,26 @@ app.post('/api/gemini', async (c) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
     });
+    
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "すみません、答えられません。";
+    
+    // 【変更点】Googleからエラーが返ってきたら、その理由をそのまま表示する
+    if (!response.ok) {
+      return c.json({ response: `Google APIエラー: ${data.error?.message || '詳細不明'}` });
+    }
+    
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    // テキストがない場合（セーフティフィルターに引っかかった等）の理由を表示
+    if (!text) {
+       return c.json({ response: `回答がブロックされました。理由: ${data.candidates?.[0]?.finishReason || '不明'}` });
+    }
+    
     return c.json({ response: text });
-  } catch (e) { return c.json({ response: "エラー: " + e.message }); }
+    
+  } catch (e) { 
+    return c.json({ response: "プログラムエラー: " + e.message }); 
+  }
 });
 
 app.get('/diary', async (c) => {
