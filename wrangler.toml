@@ -12,7 +12,3 @@ database_id = "25f65336-485f-4cb8-8186-64d051e91de3"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "my-images"
-
-# ▼▼▼ ここを追加 ▼▼▼
-[vars]
-GEMINI_API_KEY = ""
