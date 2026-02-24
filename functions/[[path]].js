@@ -87,7 +87,7 @@ const Layout = (props) => html`
     .todo-form input { flex-grow: 1; padding: 10px 15px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; }
     .todo-form button { padding: 10px 20px; background: var(--text-main); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
 
-    /* ニュース、Gemini、日記 (前回と同じスタイル) */
+    /* ニュース、Gemini、日記ギャラリー */
     .news-list { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 350px; }
     .news-item { font-size: 0.9rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
     .news-item a:hover { color: var(--primary); }
@@ -121,7 +121,7 @@ const Layout = (props) => html`
 </html>
 `;
 
-// --- 2. ニュース取得 (日経, Reuters, Bloomberg, tenki.jp) ---
+// --- 2. ニュース取得 (指定ソース限定) ---
 async function fetchGoogleNews() {
   try {
     const query = "site:nikkei.com OR site:jp.reuters.com OR site:bloomberg.co.jp OR site:tenki.jp";
@@ -219,7 +219,7 @@ app.get('/', async (c) => {
         <div class="card col-span-1">
           <div class="card-header">スケジュール</div>
           <iframe 
-            src="https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=Asia%2FTokyo&showPrint=0&src=aGVlcm8uYmFzZWJhbGxAZ21haWwuY29t&src=MTVrYTNuOXA0NGlwcjZrMDNtamRoMzk3MGNAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=MG81bzExMWh1MmF1c2xwbW92bjRtZHR1bzRAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=ZmFtaWx5MDc5NTE1NTgwMzEzNDMyMzMzMzNAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=a3UwdjVkMjg3amhra2l1YnRlNzhpaG0wOThAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=amEuamFwYW5lc2UjaG9saWRheUBncm91cC52LmNhbGVuZGFyLmdvb2dsZS5jb20&src=aHQzamxmYWFjNWxmZDYyNjN1bGZoNHRxbDhAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&color=%233f51b5&color=%23f6bf26&color=%23795548&color=%2333b679&color=%23d81b60&color=%23009688&color=%23b39ddb" 
+            src="https://calendar.google.com/calendar/embed?src=あなたのカレンダーID&mode=AGENDA" 
             style="border: 0" width="100%" height="350" frameborder="0" scrolling="no">
           </iframe>
           </div>
@@ -278,15 +278,9 @@ app.get('/', async (c) => {
         // --- 1. 時計と暦のリアルタイム更新 ---
         function updateClock() {
           const now = new Date();
-          
-          // 時刻表示 (例: 14:30:05)
           document.getElementById('time-display').textContent = now.toLocaleTimeString('ja-JP', { hour12: false });
-          
-          // 和暦表示 (例: 令和8年2月24日 (火))
           const dateOptions = { era: 'long', year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' };
           document.getElementById('date-jp').textContent = new Intl.DateTimeFormat('ja-JP-u-ca-japanese', dateOptions).format(now);
-          
-          // 暦の表示 (西暦と旧暦の月名)
           const oldMonths = ['睦月', '如月', '弥生', '卯月', '皐月', '水無月', '文月', '葉月', '長月', '神無月', '霜月', '師走'];
           document.getElementById('koyomi-display').textContent = \`西暦\${now.getFullYear()}年 / 旧暦: \${oldMonths[now.getMonth()]}\`;
         }
@@ -331,7 +325,7 @@ app.post('/todos/add', async (c) => {
 
 app.post('/todos/toggle', async (c) => {
   const body = await c.req.parseBody();
-  const newStatus = body['current'] === '1' ? 0 : 1; // 1なら0に、0なら1に反転
+  const newStatus = body['current'] === '1' ? 0 : 1;
   await c.env.DB.prepare('UPDATE todos SET is_completed = ? WHERE id = ?').bind(newStatus, body['id']).run();
   return c.redirect('/');
 });
@@ -342,8 +336,7 @@ app.post('/todos/delete', async (c) => {
   return c.redirect('/');
 });
 
-// --- GeminiAPI、日記関連処理 (前と同じ機能) ---
-// --- GeminiAPI処理 (エラー原因特定版) ---
+// --- Gemini API処理 (2.5-flash適用・エラー解析付き) ---
 app.post('/api/gemini', async (c) => {
   const { prompt } = await c.req.json();
   const apiKey = c.env.GEMINI_API_KEY;
@@ -359,18 +352,10 @@ app.post('/api/gemini', async (c) => {
     });
     
     const data = await response.json();
-    
-    // 【変更点】Googleからエラーが返ってきたら、その理由をそのまま表示する
-    if (!response.ok) {
-      return c.json({ response: `Google APIエラー: ${data.error?.message || '詳細不明'}` });
-    }
+    if (!response.ok) return c.json({ response: `Google APIエラー: ${data.error?.message || '詳細不明'}` });
     
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    // テキストがない場合（セーフティフィルターに引っかかった等）の理由を表示
-    if (!text) {
-       return c.json({ response: `回答がブロックされました。理由: ${data.candidates?.[0]?.finishReason || '不明'}` });
-    }
+    if (!text) return c.json({ response: `回答がブロックされました。理由: ${data.candidates?.[0]?.finishReason || '不明'}` });
     
     return c.json({ response: text });
     
@@ -379,6 +364,7 @@ app.post('/api/gemini', async (c) => {
   }
 });
 
+// --- 日記一覧ページ (編集・削除ボタン付き) ---
 app.get('/diary', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC').all();
   return c.html(Layout({
@@ -388,8 +374,17 @@ app.get('/diary', async (c) => {
         <h2 style="margin-bottom: 20px;">全ての記録</h2>
         ${results.map(note => html`
           <div class="card" style="margin-bottom: 15px;">
-            <div style="font-weight:bold; color:var(--text-muted); font-size:0.9rem; margin-bottom:8px;">
-              ${new Date(note.created_at).toLocaleString('ja-JP')}
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+              <div style="font-weight:bold; color:var(--text-muted); font-size:0.9rem;">
+                ${new Date(note.created_at).toLocaleString('ja-JP')}
+              </div>
+              <div style="display:flex; gap:15px;">
+                <a href="/diary/edit/${note.id}" style="color:var(--primary); font-size:0.9rem;">編集</a>
+                <form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('本当に削除しますか？この操作は取り消せません。');">
+                  <input type="hidden" name="id" value="${note.id}">
+                  <button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; padding:0; text-decoration:underline;">削除</button>
+                </form>
+              </div>
             </div>
             <p style="white-space: pre-wrap; margin:0;">${note.content}</p>
             ${note.image_url ? html`<img src="${note.image_url}" style="margin-top:10px; border-radius:8px; max-width:300px;" />` : ''}
@@ -400,6 +395,48 @@ app.get('/diary', async (c) => {
   }));
 });
 
+// --- 日記の削除処理 ---
+app.post('/diary/delete', async (c) => {
+  const body = await c.req.parseBody();
+  await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(body['id']).run();
+  return c.redirect('/diary');
+});
+
+// --- 日記の編集画面 ---
+app.get('/diary/edit/:id', async (c) => {
+  const id = c.req.param('id');
+  const note = await c.env.DB.prepare('SELECT * FROM notes WHERE id = ?').bind(id).first();
+  if (!note) return c.text('見つかりません', 404);
+
+  return c.html(Layout({
+    title: '記録の編集',
+    children: html`
+      <div class="container" style="display:block; max-width:600px;">
+        <div class="card">
+          <div class="card-header">記録を編集</div>
+          <form method="POST" action="/diary/edit/${note.id}" style="display:flex; flex-direction:column; gap:15px;">
+            <textarea name="content" rows="6" required style="padding:10px; border:1px solid var(--border); border-radius:8px;">${note.content}</textarea>
+            <div style="font-size:0.8rem; color:var(--text-muted);">※現在はテキストのみ編集可能です。</div>
+            <div style="display:flex; gap:10px;">
+              <button type="submit" style="flex-grow:1; padding:10px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer;">更新する</button>
+              <a href="/diary" style="padding:10px 20px; background:var(--bg); color:var(--text-main); border-radius:8px; text-align:center;">キャンセル</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    `
+  }));
+});
+
+// --- 日記の編集処理 ---
+app.post('/diary/edit/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.parseBody();
+  await c.env.DB.prepare('UPDATE notes SET content = ? WHERE id = ?').bind(body['content'], id).run();
+  return c.redirect('/diary');
+});
+
+// --- 日記の投稿ページ ---
 app.get('/diary/post', (c) => {
   return c.html(Layout({
     title: '新規投稿',
@@ -418,6 +455,7 @@ app.get('/diary/post', (c) => {
   }));
 });
 
+// --- 日記の投稿処理 ---
 app.post('/diary/post', async (c) => {
   const body = await c.req.parseBody();
   const content = body['content'];
@@ -433,6 +471,7 @@ app.post('/diary/post', async (c) => {
   return c.redirect('/');
 });
 
+// --- 画像表示用 ---
 app.get('/images/:key', async (c) => {
   const object = await c.env.BUCKET.get(c.req.param('key'));
   if (!object) return c.text('Not Found', 404);
