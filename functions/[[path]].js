@@ -11,12 +11,17 @@ app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.
 
 // --- 2. ニュース取得 ---
 async function fetchNews() {
+  // 取得元を専門的な3社に限定するフィルター
+  const baseQuery = "site:bloomberg.co.jp OR site:jp.reuters.com OR site:nikkei.com";
+  
+  // 各タブごとに、3社の中からさらにキーワードで絞り込む
   const queries = {
-    top: 'https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja',
-    biz: 'https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=ja&gl=JP&ceid=JP:ja',
-    market: 'https://news.google.com/rss/search?q=%E3%83%9E%E3%83%BC%E3%82%B1%E3%83%83%E3%83%88&hl=ja&gl=JP&ceid=JP:ja',
-    it: 'https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=ja&gl=JP&ceid=JP:ja'
+    top: `https://news.google.com/rss/search?q=${encodeURIComponent(baseQuery)}&hl=ja&gl=JP&ceid=JP:ja`,
+    biz: `https://news.google.com/rss/search?q=${encodeURIComponent('政治 OR 経済 ' + baseQuery)}&hl=ja&gl=JP&ceid=JP:ja`,
+    market: `https://news.google.com/rss/search?q=${encodeURIComponent('株 OR 為替 OR マーケット ' + baseQuery)}&hl=ja&gl=JP&ceid=JP:ja`,
+    it: `https://news.google.com/rss/search?q=${encodeURIComponent('IT OR AI OR テクノロジー ' + baseQuery)}&hl=ja&gl=JP&ceid=JP:ja`
   };
+  
   const results = {};
   for (const [key, url] of Object.entries(queries)) {
     try {
@@ -26,7 +31,7 @@ async function fetchNews() {
       const regex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<source.*?>(.*?)<\/source>/g;
       let match;
       while ((match = regex.exec(text)) !== null) {
-        if (items.length >= 8) break;
+        if (items.length >= 8) break; // 各タブ8件まで取得
         let imgUrl = null;
         const imgMatch = match[3].match(/<img[^>]+src="([^">]+)"/);
         if (imgMatch) imgUrl = imgMatch[1];
