@@ -24,3 +24,11 @@ CREATE TABLE IF NOT EXISTS todos (
   is_completed INTEGER DEFAULT 0,
   created_at INTEGER
 );
+
+DROP TABLE IF EXISTS chats;
+CREATE TABLE IF NOT EXISTS chats (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  role TEXT NOT NULL,      /* 'user' または 'ai' */
+  message TEXT NOT NULL,
+  created_at INTEGER
+);

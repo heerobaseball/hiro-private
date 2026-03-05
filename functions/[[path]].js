@@ -13,16 +13,15 @@ const Layout = (props) => html`
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${props.title || 'My Dashboard'}</title>
   <style>
-    /* 全体の基本設定 (少し明るく、メリハリのある色に) */
     :root {
       --bg: #f8fafc;
       --card-bg: #ffffff;
-      --text-main: #0f172a; /* より濃いネイビー/黒 */
+      --text-main: #0f172a;
       --text-muted: #64748b;
       --border: #e2e8f0;
       --primary: #3b82f6;
-      --primary-light: #eff6ff; /* 淡いブルー */
-      --button-dark: #1e293b; /* ボタン用のダークカラー */
+      --primary-light: #eff6ff;
+      --button-dark: #1e293b;
       --radius: 16px;
     }
     body {
@@ -33,7 +32,6 @@ const Layout = (props) => html`
     }
     a { text-decoration: none; color: inherit; }
     
-    /* 上部ナビゲーションバー */
     .navbar {
       display: flex; justify-content: space-between; align-items: center;
       background: var(--card-bg);
@@ -46,7 +44,6 @@ const Layout = (props) => html`
     .nav-links a { font-weight: 600; color: var(--text-muted); transition: color 0.2s; }
     .nav-links a:hover, .nav-links a.active { color: var(--primary); }
     
-    /* ダッシュボードのグリッド */
     .container {
       max-width: 1400px; margin: 2rem auto; padding: 0 1rem;
       display: grid;
@@ -54,14 +51,12 @@ const Layout = (props) => html`
       gap: 1.5rem;
     }
     
-    /* カード共通 */
     .card {
       background: var(--card-bg); border-radius: var(--radius); padding: 1.5rem;
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
       border: 1px solid rgba(226, 232, 240, 0.8);
       display: flex; flex-direction: column; overflow: hidden;
     }
-    /* ヘッダーにアイコン用のスタイルを追加 */
     .card-header { 
       font-size: 1.15rem; font-weight: 800; margin-bottom: 1.2rem; color: var(--text-main); 
       display: flex; align-items: center; gap: 10px; 
@@ -80,7 +75,7 @@ const Layout = (props) => html`
     @media (max-width: 1024px) { .container { grid-template-columns: repeat(2, 1fr); } .col-span-3 { grid-column: span 2; } }
     @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .col-span-3, .col-span-2, .col-span-1 { grid-column: span 1; } }
 
-    /* 時計ウィジェット (色とサイズを強調) */
+    /* 時計ウィジェット */
     .clock-widget { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; text-align: center; }
     .date-jp { font-size: 1.2rem; color: var(--text-main); font-weight: 700; }
     .time-display { font-size: 4.2rem; font-weight: 900; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1.1; margin: 5px 0; letter-spacing: -2px; }
@@ -109,15 +104,18 @@ const Layout = (props) => html`
     .news-item a:hover { color: var(--primary); }
     .source-tag { font-size: 0.7rem; color: #475569; background: #f1f5f9; padding: 4px 8px; border-radius: 6px; margin-left: 8px; border: 1px solid #e2e8f0; font-weight: 500; }
     
-    /* Gemini Chat (色分け) */
+    /* Gemini Chat */
     .chat-box { flex-grow: 1; overflow-y: auto; max-height: 250px; background: var(--bg); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); }
-    .chat-msg { padding: 10px 14px; border-radius: 12px; font-size: 0.9rem; max-width: 85%; line-height: 1.4; }
+    .chat-msg { padding: 10px 14px; border-radius: 12px; font-size: 0.9rem; max-width: 85%; line-height: 1.4; white-space: pre-wrap; }
     .user-msg { background: var(--button-dark); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
     .ai-msg { background: #f0f9ff; color: #0f172a; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #bae6fd; }
     .chat-input-area { display: flex; gap: 8px; }
     .chat-input-area input { flex-grow: 1; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
     .chat-input-area button { padding: 10px 16px; background: var(--button-dark); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
     .chat-input-area button:hover { background: #334155; }
+    /* チャットリセットボタン */
+    .chat-header-flex { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+    .chat-reset-btn { font-size: 0.8rem; color: var(--text-muted); background: none; border: none; cursor: pointer; text-decoration: underline; padding: 0; }
 
     /* 日記ギャラリー */
     .diary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
@@ -142,7 +140,7 @@ const Layout = (props) => html`
 </html>
 `;
 
-// --- 2. ニュース取得 (指定ソース限定) ---
+// --- 2. ニュース取得 ---
 async function fetchGoogleNews() {
   try {
     const query = "site:nikkei.com OR site:jp.reuters.com OR site:bloomberg.co.jp OR site:tenki.jp";
@@ -164,11 +162,16 @@ async function fetchGoogleNews() {
 
 // 【トップページ】
 app.get('/', async (c) => {
-  const [news, dbNotes, dbTodos] = await Promise.all([
+  // チャット履歴も含めてDBから並行取得 (最新50件まで取得して、古い順に並び替え)
+  const [news, dbNotes, dbTodos, dbChatsRaw] = await Promise.all([
     fetchGoogleNews(),
     c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 8').all(),
-    c.env.DB.prepare('SELECT * FROM todos ORDER BY is_completed ASC, created_at DESC').all()
+    c.env.DB.prepare('SELECT * FROM todos ORDER BY is_completed ASC, created_at DESC').all(),
+    c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 50').all()
   ]);
+
+  // チャットは「古いメッセージが上、新しいメッセージが下」なので反転させる
+  const chatHistory = dbChatsRaw.results.reverse();
 
   return c.html(Layout({
     title: 'ホーム - My Dashboard',
@@ -245,13 +248,23 @@ app.get('/', async (c) => {
         </div>
 
         <div class="card col-span-1">
-          <div class="card-header"><span class="card-icon">✨</span> Gemini Chat</div>
+          <div class="card-header chat-header-flex">
+            <div><span class="card-icon">✨</span> Gemini Chat</div>
+            <form method="POST" action="/api/gemini/clear" style="margin:0;" onsubmit="return confirm('チャット履歴を全て消去しますか？');">
+              <button type="submit" class="chat-reset-btn">履歴をクリア</button>
+            </form>
+          </div>
           <div id="chat-history" class="chat-box">
-            <div class="chat-msg ai-msg">こんにちは！何かお手伝いしましょうか？</div>
+            ${chatHistory.length === 0 ? html`<div class="chat-msg ai-msg">こんにちは！何かお手伝いしましょうか？</div>` : ''}
+            ${chatHistory.map(chat => html`
+              <div class="chat-msg ${chat.role === 'user' ? 'user-msg' : 'ai-msg'}">
+                ${chat.message}
+              </div>
+            `)}
           </div>
           <form id="gemini-form" class="chat-input-area">
-            <input type="text" id="gemini-input" placeholder="メッセージを入力..." required>
-            <button type="submit">送信</button>
+            <input type="text" id="gemini-input" placeholder="メッセージを入力..." required autocomplete="off">
+            <button type="submit" id="gemini-submit">送信</button>
           </form>
         </div>
 
@@ -295,7 +308,7 @@ app.get('/', async (c) => {
       </div>
 
       <script>
-        // --- 1. 時計と暦のリアルタイム更新 ---
+        // 時計更新
         function updateClock() {
           const now = new Date();
           document.getElementById('time-display').textContent = now.toLocaleTimeString('ja-JP', { hour12: false });
@@ -305,18 +318,24 @@ app.get('/', async (c) => {
           document.getElementById('koyomi-display').textContent = \`西暦\${now.getFullYear()}年 / 旧暦: \${oldMonths[now.getMonth()]}\`;
         }
         setInterval(updateClock, 1000);
-        updateClock(); // 初回実行
+        updateClock();
 
-        // --- 2. Geminiチャット処理 ---
+        // ページ読み込み時にチャットを一番下までスクロールさせる
+        const historyDiv = document.getElementById('chat-history');
+        historyDiv.scrollTop = historyDiv.scrollHeight;
+
+        // Geminiチャット送信処理
         document.getElementById('gemini-form').addEventListener('submit', async (e) => {
           e.preventDefault();
           const input = document.getElementById('gemini-input');
-          const history = document.getElementById('chat-history');
+          const submitBtn = document.getElementById('gemini-submit');
           const prompt = input.value;
 
-          history.innerHTML += \`<div class="chat-msg user-msg">\${prompt}</div>\`;
+          // ユーザーのメッセージを画面にすぐ追加
+          historyDiv.innerHTML += \`<div class="chat-msg user-msg">\${prompt}</div>\`;
           input.value = '';
-          history.scrollTop = history.scrollHeight;
+          submitBtn.disabled = true; // 連打防止
+          historyDiv.scrollTop = historyDiv.scrollHeight;
 
           try {
             const res = await fetch('/api/gemini', {
@@ -325,11 +344,13 @@ app.get('/', async (c) => {
               body: JSON.stringify({ prompt })
             });
             const data = await res.json();
-            history.innerHTML += \`<div class="chat-msg ai-msg">\${data.response}</div>\`;
+            // AIの返答を画面に追加
+            historyDiv.innerHTML += \`<div class="chat-msg ai-msg">\${data.response}</div>\`;
           } catch (err) {
-            history.innerHTML += \`<div class="chat-msg ai-msg" style="color:red;">エラーが発生しました</div>\`;
+            historyDiv.innerHTML += \`<div class="chat-msg ai-msg" style="color:red;">エラーが発生しました</div>\`;
           }
-          history.scrollTop = history.scrollHeight;
+          submitBtn.disabled = false;
+          historyDiv.scrollTop = historyDiv.scrollHeight;
         });
       </script>
     `
@@ -342,26 +363,28 @@ app.post('/todos/add', async (c) => {
   await c.env.DB.prepare('INSERT INTO todos (task, created_at) VALUES (?, ?)').bind(body['task'], Date.now()).run();
   return c.redirect('/');
 });
-
 app.post('/todos/toggle', async (c) => {
   const body = await c.req.parseBody();
   const newStatus = body['current'] === '1' ? 0 : 1;
   await c.env.DB.prepare('UPDATE todos SET is_completed = ? WHERE id = ?').bind(newStatus, body['id']).run();
   return c.redirect('/');
 });
-
 app.post('/todos/delete', async (c) => {
   const body = await c.req.parseBody();
   await c.env.DB.prepare('DELETE FROM todos WHERE id = ?').bind(body['id']).run();
   return c.redirect('/');
 });
 
-// --- Gemini API処理 (2.5-flash適用・エラー解析付き) ---
+// --- Gemini API処理 (チャット履歴保存付き) ---
 app.post('/api/gemini', async (c) => {
   const { prompt } = await c.req.json();
   const apiKey = c.env.GEMINI_API_KEY;
   
   if (!apiKey) return c.json({ response: "APIキーが設定されていません" });
+
+  // 1. ユーザーの送信内容をDBに保存
+  await c.env.DB.prepare('INSERT INTO chats (role, message, created_at) VALUES (?, ?, ?)')
+    .bind('user', prompt, Date.now()).run();
   
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
@@ -377,6 +400,10 @@ app.post('/api/gemini', async (c) => {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) return c.json({ response: `回答がブロックされました。理由: ${data.candidates?.[0]?.finishReason || '不明'}` });
     
+    // 2. AIからの返答内容をDBに保存
+    await c.env.DB.prepare('INSERT INTO chats (role, message, created_at) VALUES (?, ?, ?)')
+      .bind('ai', text, Date.now()).run();
+
     return c.json({ response: text });
     
   } catch (e) { 
@@ -384,7 +411,14 @@ app.post('/api/gemini', async (c) => {
   }
 });
 
-// --- 日記一覧ページ (編集・削除ボタン付き) ---
+// --- チャット履歴リセット処理 ---
+app.post('/api/gemini/clear', async (c) => {
+  await c.env.DB.prepare('DELETE FROM chats').run();
+  return c.redirect('/');
+});
+
+
+// --- 日記関連処理 (そのまま) ---
 app.get('/diary', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC').all();
   return c.html(Layout({
@@ -414,20 +448,15 @@ app.get('/diary', async (c) => {
     `
   }));
 });
-
-// --- 日記の削除処理 ---
 app.post('/diary/delete', async (c) => {
   const body = await c.req.parseBody();
   await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(body['id']).run();
   return c.redirect('/diary');
 });
-
-// --- 日記の編集画面 ---
 app.get('/diary/edit/:id', async (c) => {
   const id = c.req.param('id');
   const note = await c.env.DB.prepare('SELECT * FROM notes WHERE id = ?').bind(id).first();
   if (!note) return c.text('見つかりません', 404);
-
   return c.html(Layout({
     title: '記録の編集',
     children: html`
@@ -447,16 +476,12 @@ app.get('/diary/edit/:id', async (c) => {
     `
   }));
 });
-
-// --- 日記の編集処理 ---
 app.post('/diary/edit/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.parseBody();
   await c.env.DB.prepare('UPDATE notes SET content = ? WHERE id = ?').bind(body['content'], id).run();
   return c.redirect('/diary');
 });
-
-// --- 日記の投稿ページ ---
 app.get('/diary/post', (c) => {
   return c.html(Layout({
     title: '新規投稿',
@@ -474,8 +499,6 @@ app.get('/diary/post', (c) => {
     `
   }));
 });
-
-// --- 日記の投稿処理 ---
 app.post('/diary/post', async (c) => {
   const body = await c.req.parseBody();
   const content = body['content'];
@@ -490,8 +513,6 @@ app.post('/diary/post', async (c) => {
     .bind(content, imageUrl, Date.now()).run();
   return c.redirect('/');
 });
-
-// --- 画像表示用 ---
 app.get('/images/:key', async (c) => {
   const object = await c.env.BUCKET.get(c.req.param('key'));
   if (!object) return c.text('Not Found', 404);
