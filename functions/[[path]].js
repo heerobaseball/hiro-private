@@ -75,18 +75,30 @@ const Layout = (props) => html`
     @media (max-width: 1024px) { .container { grid-template-columns: repeat(2, 1fr); } .col-span-3 { grid-column: span 2; } }
     @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .col-span-3, .col-span-2, .col-span-1 { grid-column: span 1; } }
 
-    /* 時計ウィジェット */
+    /* 時計 */
     .clock-horizontal { display: flex; flex-direction: row; justify-content: center; align-items: center; flex-wrap: wrap; gap: 2.5rem; }
     .date-jp { font-size: 1.3rem; color: var(--text-main); font-weight: 700; }
     .time-display { font-size: 3.5rem; font-weight: 900; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1; margin: 0; letter-spacing: -2px; }
     .koyomi-display { font-size: 0.9rem; color: #0369a1; background: #e0f2fe; padding: 6px 16px; border-radius: 20px; font-weight: 600; border: 1px solid #bae6fd; }
 
-    /* クイックメモ */
-    .quick-memo-area { flex-grow: 1; width: 100%; min-height: 180px; resize: none; border: none; outline: none; background: transparent; font-size: 0.95rem; font-family: inherit; line-height: 1.6; color: var(--text-main); }
-    .quick-memo-area::placeholder { color: #94a3b8; }
+    /* Google Keep風メモ */
+    .memo-add-form { display: flex; gap: 8px; margin-bottom: 12px; }
+    .memo-add-form input { flex-grow: 1; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; outline: none; transition: 0.2s; }
+    .memo-add-form input:focus { border-color: var(--primary); }
+    .memo-add-form button { padding: 0 16px; background: var(--button-dark); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+    .memo-add-form button:hover { background: #334155; }
+    
+    .memo-list { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 250px; padding-right: 4px; padding-top: 4px; }
+    .memo-item { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 10px; position: relative; transition: 0.2s; }
+    .memo-item:focus-within { border-color: var(--primary); background: #ffffff; box-shadow: 0 0 0 2px var(--primary-light); }
+    .memo-textarea { width: 100%; border: none; background: transparent; resize: none; min-height: 24px; font-family: inherit; font-size: 0.95rem; color: var(--text-main); outline: none; line-height: 1.5; padding: 0; overflow: hidden; }
+    
+    /* ホバー時のみ×ボタンを表示 */
+    .memo-delete { position: absolute; top: -6px; right: -6px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .memo-item:hover .memo-delete { opacity: 1; }
 
     /* ToDoリスト */
-    .todo-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 200px; margin-bottom: 15px; }
+    .todo-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 250px; margin-bottom: 15px; }
     .todo-item { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; background: #f8fafc; transition: 0.2s; border: 1px solid transparent; }
     .todo-item:hover { background: #f1f5f9; border-color: var(--border); }
     .todo-check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #cbd5e1; background: white; cursor: pointer; display:flex; align-items:center; justify-content:center; color: white; padding:0; transition: 0.2s; }
@@ -128,8 +140,7 @@ const Layout = (props) => html`
     .diary-card.no-image { background: var(--bg); padding: 12px; display: flex; flex-direction: column; justify-content: space-between; }
     .diary-card.no-image .overlay { position: static; background: none; color: var(--text-muted); padding: 0; }
     
-    /* 保存完了の小さなお知らせ表示 */
-    #save-status { font-size: 0.8rem; color: var(--primary); opacity: 0; transition: opacity 0.3s; font-weight: bold; margin-left: 10px; }
+    #save-status { font-size: 0.8rem; color: var(--primary); opacity: 0; transition: opacity 0.3s; font-weight: bold; margin-left: auto; }
   </style>
 </head>
 <body>
@@ -168,17 +179,16 @@ async function fetchGoogleNews() {
 
 // 【トップページ】
 app.get('/', async (c) => {
-  // DBからデータをまとめて取得（クイックメモも追加）
-  const [news, dbNotes, dbTodos, dbChatsRaw, memoRaw] = await Promise.all([
+  const [news, dbNotes, dbTodos, dbChatsRaw, dbMemos] = await Promise.all([
     fetchGoogleNews(),
     c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 8').all(),
     c.env.DB.prepare('SELECT * FROM todos ORDER BY is_completed ASC, created_at DESC').all(),
     c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 50').all(),
-    c.env.DB.prepare('SELECT content FROM quick_memo WHERE id = 1').first()
+    // メモを新しい順に全件取得
+    c.env.DB.prepare('SELECT * FROM quick_memo ORDER BY id DESC').all()
   ]);
 
   const chatHistory = dbChatsRaw.results.reverse();
-  const memoContent = memoRaw ? memoRaw.content : '';
 
   return c.html(Layout({
     title: 'ホーム - My Dashboard',
@@ -194,11 +204,27 @@ app.get('/', async (c) => {
         </div>
 
         <div class="card col-span-1">
-          <div class="card-header">
-            <div><span class="card-icon">📝</span> クイックメモ</div>
+          <div class="card-header chat-header-flex">
+            <div><span class="card-icon">📝</span> メモ帳</div>
             <span id="save-status">保存しました</span>
           </div>
-          <textarea id="quick-memo" class="quick-memo-area" placeholder="ここに書いた文字は、自動的に同期されます...">${memoContent}</textarea>
+
+          <form class="memo-add-form" method="POST" action="/memo/add">
+            <input type="text" name="content" placeholder="新しいメモ..." required autocomplete="off">
+            <button type="submit">追加</button>
+          </form>
+
+          <div class="memo-list">
+            ${dbMemos.results.map(memo => html`
+              <div class="memo-item">
+                <textarea class="memo-textarea" data-id="${memo.id}">${memo.content}</textarea>
+                <form method="POST" action="/memo/delete" style="margin:0;">
+                  <input type="hidden" name="id" value="${memo.id}">
+                  <button type="submit" class="memo-delete" title="削除">×</button>
+                </form>
+              </div>
+            `)}
+          </div>
         </div>
 
         <div class="card col-span-2">
@@ -335,30 +361,41 @@ app.get('/', async (c) => {
         setInterval(updateClock, 1000);
         updateClock();
 
-        // 2. クイックメモの自動保存機能 (D1 DBと同期)
-        const memoInput = document.getElementById('quick-memo');
+        // 2. メモの自動保存 & 高さ調整 (複数対応)
+        const memoTextareas = document.querySelectorAll('.memo-textarea');
         const saveStatus = document.getElementById('save-status');
-        let memoTimeout;
-        if (memoInput) {
-          memoInput.addEventListener('input', () => {
-            clearTimeout(memoTimeout);
-            // タイピングが止まって1秒後に裏側で保存処理を実行
-            memoTimeout = setTimeout(async () => {
+        let memoTimeouts = {};
+
+        memoTextareas.forEach(textarea => {
+          // 初期表示時にテキスト量に合わせて高さを広げる
+          textarea.style.height = 'auto';
+          textarea.style.height = textarea.scrollHeight + 'px';
+
+          textarea.addEventListener('input', (e) => {
+            // 入力中も自動で高さを広げる
+            e.target.style.height = 'auto';
+            e.target.style.height = e.target.scrollHeight + 'px';
+
+            const id = e.target.getAttribute('data-id');
+            const content = e.target.value;
+            
+            clearTimeout(memoTimeouts[id]);
+            // タイピングが止まって0.8秒後に自動保存
+            memoTimeouts[id] = setTimeout(async () => {
               try {
-                await fetch('/api/memo', {
+                await fetch('/api/memo/update', {
                   method: 'POST',
                   headers: {'Content-Type': 'application/json'},
-                  body: JSON.stringify({ content: memoInput.value })
+                  body: JSON.stringify({ id, content })
                 });
-                // 保存成功時に「保存しました」とふわっと表示
                 saveStatus.style.opacity = '1';
                 setTimeout(() => { saveStatus.style.opacity = '0'; }, 2000);
-              } catch (e) {
-                console.error('メモの保存エラー', e);
+              } catch (err) {
+                console.error('メモ保存エラー', err);
               }
-            }, 1000);
+            }, 800);
           });
-        }
+        });
 
         // 3. チャットのスクロールと送信処理
         const historyDiv = document.getElementById('chat-history');
@@ -394,11 +431,22 @@ app.get('/', async (c) => {
   }));
 });
 
-// --- クイックメモ保存処理 ---
-app.post('/api/memo', async (c) => {
-  const { content } = await c.req.json();
-  // 常にid=1の行を更新する
-  await c.env.DB.prepare('UPDATE quick_memo SET content = ? WHERE id = 1').bind(content).run();
+// --- メモ機能の処理 ---
+app.post('/memo/add', async (c) => {
+  const body = await c.req.parseBody();
+  await c.env.DB.prepare('INSERT INTO quick_memo (content) VALUES (?)').bind(body['content']).run();
+  return c.redirect('/');
+});
+
+app.post('/memo/delete', async (c) => {
+  const body = await c.req.parseBody();
+  await c.env.DB.prepare('DELETE FROM quick_memo WHERE id = ?').bind(body['id']).run();
+  return c.redirect('/');
+});
+
+app.post('/api/memo/update', async (c) => {
+  const { id, content } = await c.req.json();
+  await c.env.DB.prepare('UPDATE quick_memo SET content = ? WHERE id = ?').bind(content, id).run();
   return c.json({ success: true });
 });
 
