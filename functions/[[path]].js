@@ -311,7 +311,7 @@ app.get('/', async (c) => {
   </main>
 </body>
 </html>
-  `)});
+  `);
 });
 
 // --- API ---
