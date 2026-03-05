@@ -199,8 +199,33 @@ app.get('/', async (c) => {
       </div>
 
       <div class="card col-span-2">
-        <div class="card-header"><span class="card-icon">📈</span> Advanced Market</div>
-        <div class="tradingview-widget-container" style="height:350px;"><div id="tradingview_chart" style="height:100%;"></div><script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script><script type="text/javascript">new TradingView.widget({ "autosize": true, "symbol": "FX_IDC:USDJPY", "interval": "D", "timezone": "Asia/Tokyo", "theme": "light", "style": "1", "locale": "ja", "enable_publishing": false, "allow_symbol_change": true, "watchlist": ["FOREXCOM:SPXUSD", "AMEX:VOO", "TVC:TOPIX", "TSE:9432", "BITSTAMP:BTCUSD", "BITSTAMP:ETHUSD"], "container_id": "tradingview_chart" });</script></div>
+        <div class="card-header"><span class="card-icon">📈</span> マーケット</div>
+        <div class="tradingview-widget-container" style="height:350px;">
+          <div class="tradingview-widget-container__widget"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>
+          {
+            "width": "100%", "height": 350,
+            "symbolsGroups": [
+              {
+                "name": "Watchlist",
+                "symbols": [
+                  { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
+                  { "name": "AMEX:VOO", "displayName": "VOO" },
+                  { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
+                  { "name": "TSE:9432", "displayName": "NTT" },
+                  { "name": "TSE:4755", "displayName": "楽天グループ" },
+                  { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
+                  { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
+                  { "name": "BITSTAMP:ETHUSD", "displayName": "ETH/USD" },
+                  { "name": "BITSTAMP:XRPUSD", "displayName": "XRP/USD" },
+                  { "name": "COINBASE:SHIBUSD", "displayName": "SHIB/USD" }
+                ]
+              }
+            ],
+            "colorTheme": "light", "isTransparent": true, "locale": "ja"
+          }
+          </script>
+        </div>
       </div>
 
       <div class="card col-span-1">
