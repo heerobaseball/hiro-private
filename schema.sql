@@ -32,3 +32,11 @@ CREATE TABLE IF NOT EXISTS chats (
   message TEXT NOT NULL,
   created_at INTEGER
 );
+
+DROP TABLE IF EXISTS quick_memo;
+CREATE TABLE IF NOT EXISTS quick_memo (
+  id INTEGER PRIMARY KEY,
+  content TEXT
+);
+/* 初期データとして空のメモを1行だけ作成しておきます */
+INSERT INTO quick_memo (id, content) VALUES (1, '');

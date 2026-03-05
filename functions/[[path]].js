@@ -4,7 +4,7 @@ import { html } from 'hono/html';
 
 const app = new Hono();
 
-// --- 1. モダンな共通レイアウト (Bento UI + カラフル調整) ---
+// --- 1. モダンな共通レイアウト ---
 const Layout = (props) => html`
 <!DOCTYPE html>
 <html lang="ja">
@@ -76,10 +76,14 @@ const Layout = (props) => html`
     @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .col-span-3, .col-span-2, .col-span-1 { grid-column: span 1; } }
 
     /* 時計ウィジェット */
-    .clock-widget { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; text-align: center; }
-    .date-jp { font-size: 1.2rem; color: var(--text-main); font-weight: 700; }
-    .time-display { font-size: 4.2rem; font-weight: 900; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1.1; margin: 5px 0; letter-spacing: -2px; }
-    .koyomi-display { font-size: 0.85rem; color: #0369a1; background: #e0f2fe; padding: 6px 16px; border-radius: 20px; margin-top: 8px; font-weight: 600; border: 1px solid #bae6fd; }
+    .clock-horizontal { display: flex; flex-direction: row; justify-content: center; align-items: center; flex-wrap: wrap; gap: 2.5rem; }
+    .date-jp { font-size: 1.3rem; color: var(--text-main); font-weight: 700; }
+    .time-display { font-size: 3.5rem; font-weight: 900; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1; margin: 0; letter-spacing: -2px; }
+    .koyomi-display { font-size: 0.9rem; color: #0369a1; background: #e0f2fe; padding: 6px 16px; border-radius: 20px; font-weight: 600; border: 1px solid #bae6fd; }
+
+    /* クイックメモ */
+    .quick-memo-area { flex-grow: 1; width: 100%; min-height: 180px; resize: none; border: none; outline: none; background: transparent; font-size: 0.95rem; font-family: inherit; line-height: 1.6; color: var(--text-main); }
+    .quick-memo-area::placeholder { color: #94a3b8; }
 
     /* ToDoリスト */
     .todo-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 200px; margin-bottom: 15px; }
@@ -113,7 +117,6 @@ const Layout = (props) => html`
     .chat-input-area input { flex-grow: 1; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
     .chat-input-area button { padding: 10px 16px; background: var(--button-dark); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
     .chat-input-area button:hover { background: #334155; }
-    /* チャットリセットボタン */
     .chat-header-flex { display: flex; justify-content: space-between; align-items: center; width: 100%; }
     .chat-reset-btn { font-size: 0.8rem; color: var(--text-muted); background: none; border: none; cursor: pointer; text-decoration: underline; padding: 0; }
 
@@ -124,6 +127,9 @@ const Layout = (props) => html`
     .diary-card .overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: white; padding: 10px; font-size: 0.8rem; font-weight: bold; }
     .diary-card.no-image { background: var(--bg); padding: 12px; display: flex; flex-direction: column; justify-content: space-between; }
     .diary-card.no-image .overlay { position: static; background: none; color: var(--text-muted); padding: 0; }
+    
+    /* 保存完了の小さなお知らせ表示 */
+    #save-status { font-size: 0.8rem; color: var(--primary); opacity: 0; transition: opacity 0.3s; font-weight: bold; margin-left: 10px; }
   </style>
 </head>
 <body>
@@ -162,28 +168,37 @@ async function fetchGoogleNews() {
 
 // 【トップページ】
 app.get('/', async (c) => {
-  // チャット履歴も含めてDBから並行取得 (最新50件まで取得して、古い順に並び替え)
-  const [news, dbNotes, dbTodos, dbChatsRaw] = await Promise.all([
+  // DBからデータをまとめて取得（クイックメモも追加）
+  const [news, dbNotes, dbTodos, dbChatsRaw, memoRaw] = await Promise.all([
     fetchGoogleNews(),
     c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 8').all(),
     c.env.DB.prepare('SELECT * FROM todos ORDER BY is_completed ASC, created_at DESC').all(),
-    c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 50').all()
+    c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 50').all(),
+    c.env.DB.prepare('SELECT content FROM quick_memo WHERE id = 1').first()
   ]);
 
-  // チャットは「古いメッセージが上、新しいメッセージが下」なので反転させる
   const chatHistory = dbChatsRaw.results.reverse();
+  const memoContent = memoRaw ? memoRaw.content : '';
 
   return c.html(Layout({
     title: 'ホーム - My Dashboard',
     children: html`
       <div class="container">
         
-        <div class="card col-span-1" style="border-top: 4px solid var(--primary);">
-          <div class="clock-widget">
+        <div class="card col-span-3" style="border-top: 4px solid var(--primary); padding: 1.2rem 2rem;">
+          <div class="clock-horizontal">
             <div class="date-jp" id="date-jp">--年--月--日</div>
             <div class="time-display" id="time-display">--:--:--</div>
             <div class="koyomi-display" id="koyomi-display">読込中...</div>
           </div>
+        </div>
+
+        <div class="card col-span-1">
+          <div class="card-header">
+            <div><span class="card-icon">📝</span> クイックメモ</div>
+            <span id="save-status">保存しました</span>
+          </div>
+          <textarea id="quick-memo" class="quick-memo-area" placeholder="ここに書いた文字は、自動的に同期されます...">${memoContent}</textarea>
         </div>
 
         <div class="card col-span-2">
@@ -308,7 +323,7 @@ app.get('/', async (c) => {
       </div>
 
       <script>
-        // 時計更新
+        // 1. 時計更新
         function updateClock() {
           const now = new Date();
           document.getElementById('time-display').textContent = now.toLocaleTimeString('ja-JP', { hour12: false });
@@ -320,21 +335,44 @@ app.get('/', async (c) => {
         setInterval(updateClock, 1000);
         updateClock();
 
-        // ページ読み込み時にチャットを一番下までスクロールさせる
+        // 2. クイックメモの自動保存機能 (D1 DBと同期)
+        const memoInput = document.getElementById('quick-memo');
+        const saveStatus = document.getElementById('save-status');
+        let memoTimeout;
+        if (memoInput) {
+          memoInput.addEventListener('input', () => {
+            clearTimeout(memoTimeout);
+            // タイピングが止まって1秒後に裏側で保存処理を実行
+            memoTimeout = setTimeout(async () => {
+              try {
+                await fetch('/api/memo', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ content: memoInput.value })
+                });
+                // 保存成功時に「保存しました」とふわっと表示
+                saveStatus.style.opacity = '1';
+                setTimeout(() => { saveStatus.style.opacity = '0'; }, 2000);
+              } catch (e) {
+                console.error('メモの保存エラー', e);
+              }
+            }, 1000);
+          });
+        }
+
+        // 3. チャットのスクロールと送信処理
         const historyDiv = document.getElementById('chat-history');
         historyDiv.scrollTop = historyDiv.scrollHeight;
 
-        // Geminiチャット送信処理
         document.getElementById('gemini-form').addEventListener('submit', async (e) => {
           e.preventDefault();
           const input = document.getElementById('gemini-input');
           const submitBtn = document.getElementById('gemini-submit');
           const prompt = input.value;
 
-          // ユーザーのメッセージを画面にすぐ追加
           historyDiv.innerHTML += \`<div class="chat-msg user-msg">\${prompt}</div>\`;
           input.value = '';
-          submitBtn.disabled = true; // 連打防止
+          submitBtn.disabled = true;
           historyDiv.scrollTop = historyDiv.scrollHeight;
 
           try {
@@ -344,7 +382,6 @@ app.get('/', async (c) => {
               body: JSON.stringify({ prompt })
             });
             const data = await res.json();
-            // AIの返答を画面に追加
             historyDiv.innerHTML += \`<div class="chat-msg ai-msg">\${data.response}</div>\`;
           } catch (err) {
             historyDiv.innerHTML += \`<div class="chat-msg ai-msg" style="color:red;">エラーが発生しました</div>\`;
@@ -356,6 +393,15 @@ app.get('/', async (c) => {
     `
   }));
 });
+
+// --- クイックメモ保存処理 ---
+app.post('/api/memo', async (c) => {
+  const { content } = await c.req.json();
+  // 常にid=1の行を更新する
+  await c.env.DB.prepare('UPDATE quick_memo SET content = ? WHERE id = 1').bind(content).run();
+  return c.json({ success: true });
+});
+
 
 // --- ToDoリスト処理 ---
 app.post('/todos/add', async (c) => {
@@ -375,14 +421,12 @@ app.post('/todos/delete', async (c) => {
   return c.redirect('/');
 });
 
-// --- Gemini API処理 (チャット履歴保存付き) ---
+// --- Gemini API処理 ---
 app.post('/api/gemini', async (c) => {
   const { prompt } = await c.req.json();
   const apiKey = c.env.GEMINI_API_KEY;
-  
   if (!apiKey) return c.json({ response: "APIキーが設定されていません" });
 
-  // 1. ユーザーの送信内容をDBに保存
   await c.env.DB.prepare('INSERT INTO chats (role, message, created_at) VALUES (?, ?, ?)')
     .bind('user', prompt, Date.now()).run();
   
@@ -396,29 +440,22 @@ app.post('/api/gemini', async (c) => {
     
     const data = await response.json();
     if (!response.ok) return c.json({ response: `Google APIエラー: ${data.error?.message || '詳細不明'}` });
-    
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) return c.json({ response: `回答がブロックされました。理由: ${data.candidates?.[0]?.finishReason || '不明'}` });
     
-    // 2. AIからの返答内容をDBに保存
     await c.env.DB.prepare('INSERT INTO chats (role, message, created_at) VALUES (?, ?, ?)')
       .bind('ai', text, Date.now()).run();
-
     return c.json({ response: text });
-    
   } catch (e) { 
     return c.json({ response: "プログラムエラー: " + e.message }); 
   }
 });
-
-// --- チャット履歴リセット処理 ---
 app.post('/api/gemini/clear', async (c) => {
   await c.env.DB.prepare('DELETE FROM chats').run();
   return c.redirect('/');
 });
 
-
-// --- 日記関連処理 (そのまま) ---
+// --- 日記関連処理 ---
 app.get('/diary', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC').all();
   return c.html(Layout({
@@ -434,7 +471,7 @@ app.get('/diary', async (c) => {
               </div>
               <div style="display:flex; gap:15px;">
                 <a href="/diary/edit/${note.id}" style="color:var(--primary); font-size:0.9rem;">編集</a>
-                <form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('本当に削除しますか？この操作は取り消せません。');">
+                <form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('本当に削除しますか？');">
                   <input type="hidden" name="id" value="${note.id}">
                   <button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; padding:0; text-decoration:underline;">削除</button>
                 </form>
@@ -465,7 +502,6 @@ app.get('/diary/edit/:id', async (c) => {
           <div class="card-header">記録を編集</div>
           <form method="POST" action="/diary/edit/${note.id}" style="display:flex; flex-direction:column; gap:15px;">
             <textarea name="content" rows="6" required style="padding:10px; border:1px solid var(--border); border-radius:8px;">${note.content}</textarea>
-            <div style="font-size:0.8rem; color:var(--text-muted);">※現在はテキストのみ編集可能です。</div>
             <div style="display:flex; gap:10px;">
               <button type="submit" style="flex-grow:1; padding:10px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer;">更新する</button>
               <a href="/diary" style="padding:10px 20px; background:var(--bg); color:var(--text-main); border-radius:8px; text-align:center;">キャンセル</a>
