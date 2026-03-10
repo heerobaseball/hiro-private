@@ -102,7 +102,6 @@ app.get('/', async (c) => {
     ...dbMapNotesRaw.results.map(n => ({ type: 'diary', id: n.id, lat: n.lat, lng: n.lng, time: n.created_at, content: n.content, image: n.image_url }))
   ].sort((a, b) => a.time - b.time);
 
-  // Google Maps APIキーを取得
   const googleMapsApiKey = c.env.GOOGLE_MAPS_API_KEY || '';
 
   return c.html(html`
@@ -289,7 +288,9 @@ app.get('/', async (c) => {
         </div>
         <div class="diary-grid">
           ${dbNotes.results.map(note => {
-            const dateStr = new Date(note.created_at).toISOString().split('T')[0];
+            // ★サーバーで日本時間(+9時間)に変換してから日付を取得
+            const dDate = new Date(note.created_at + 9 * 3600000);
+            const dateStr = dDate.getUTCFullYear() + '-' + String(dDate.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dDate.getUTCDate()).padStart(2, '0');
             if (note.image_url) { return html`<a href="/diary" class="diary-card"><img src="${note.image_url}" loading="lazy"><div class="overlay"><div>${dateStr}</div></div></a>`; }
             else { return html`<a href="/diary" class="diary-card no-image"><div style="font-size:12px; color:var(--text-main);">${note.content.substring(0, 30)}...</div><div class="overlay">${dateStr}</div></a>`; }
           })}
@@ -318,8 +319,9 @@ app.get('/', async (c) => {
         <div style="margin-top: 15px; max-height: 200px; overflow-y: auto; display:flex; flex-direction:column; gap:8px;">
           ${mapPoints.length === 0 ? html`<div style="font-size:0.9rem; color:var(--text-muted); text-align:center; padding:10px;">この日の記録はありません。</div>` : ''}
           ${mapPoints.map(p => {
-            const d = new Date(p.time);
-            const timeStr = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+            // ★サーバーで日本時間(+9時間)に変換してから時間を取得
+            const d = new Date(p.time + 9 * 3600000);
+            const timeStr = d.getUTCHours() + ':' + String(d.getUTCMinutes()).padStart(2,'0');
             return html`
               <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:#f8fafc; border-radius:8px; border:1px solid var(--border); font-size:0.9rem;">
                 <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
@@ -429,21 +431,19 @@ app.get('/', async (c) => {
         const mapElement = document.getElementById('map');
         if (!mapElement) return;
 
-        // 初期位置（データがない時はさいたま市を中心にする）
         const defaultLocation = { lat: 35.8617, lng: 139.6455 };
         
         const map = new google.maps.Map(mapElement, {
           zoom: 13,
           center: defaultLocation,
           mapTypeId: 'roadmap',
-          disableDefaultUI: true, // 余計なUIを消してスッキリさせる
+          disableDefaultUI: true, 
           zoomControl: true,
         });
 
         if(mapPoints && mapPoints.length > 0) {
           const pathCoordinates = mapPoints.map(p => ({ lat: p.lat, lng: p.lng }));
           
-          // 軌跡を赤い線で引く
           const flightPath = new google.maps.Polyline({
             path: pathCoordinates,
             geodesic: true,
@@ -456,6 +456,7 @@ app.get('/', async (c) => {
           const bounds = new google.maps.LatLngBounds();
           
           mapPoints.forEach(p => {
+            // ★ ブラウザ側のJavaScriptはそのまま(スマホのローカル時間=日本時間を参照する)でOKです
             const d = new Date(p.time);
             const timeStr = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
             let popupHtml = "";
@@ -470,7 +471,7 @@ app.get('/', async (c) => {
             }
 
             const position = { lat: p.lat, lng: p.lng };
-            bounds.extend(position); // ピンがすべて画面に収まるように計算
+            bounds.extend(position);
 
             const infowindow = new google.maps.InfoWindow({ content: popupHtml });
 
@@ -478,7 +479,7 @@ app.get('/', async (c) => {
               position: position,
               map: map,
               label: { text: iconLabel, fontSize: '20px' },
-              icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 } // 絵文字だけを浮かせる工夫
+              icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }
             });
 
             marker.addListener('click', () => {
@@ -486,9 +487,8 @@ app.get('/', async (c) => {
             });
           });
           
-          map.fitBounds(bounds); // 自動ズーム調整
+          map.fitBounds(bounds);
           
-          // 総移動距離の計算 (Google Geometry Library)
           let totalKm = 0;
           for(let i=1; i<pathCoordinates.length; i++){
             totalKm += google.maps.geometry.spherical.computeDistanceBetween(
@@ -559,7 +559,7 @@ app.get('/diary', async c => {
       <div style="max-width:600px; display:flex; flex-direction:column; gap:15px;">
         ${results.map(n => html`
           <div style="background:#fff; padding:15px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:#64748b; font-size:0.9rem;">${new Date(n.created_at).toLocaleString('ja-JP')}</span><div style="display:flex; gap:10px;"><a href="/diary/edit/${n.id}" style="color:#3b82f6; font-size:0.9rem; text-decoration:none;">編集</a><form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${n.id}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; text-decoration:underline; padding:0;">削除</button></form></div></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:#64748b; font-size:0.9rem;">${new Date(n.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</span><div style="display:flex; gap:10px;"><a href="/diary/edit/${n.id}" style="color:#3b82f6; font-size:0.9rem; text-decoration:none;">編集</a><form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${n.id}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; text-decoration:underline; padding:0;">削除</button></form></div></div>
             <p style="margin:0; white-space:pre-wrap;">${n.content}</p>${n.image_url ? html`<img src="${n.image_url}" style="margin-top:10px; border-radius:8px; max-width:100%;">` : ''}
           </div>
         `)}
@@ -567,7 +567,9 @@ app.get('/diary', async c => {
     </body></html>
   `);
 });
+
 app.post('/diary/delete', async c => { const b = await c.req.parseBody(); await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(b['id']).run(); if(b['date']) return c.redirect('/?date=' + b['date']); return c.redirect('/diary'); });
+
 app.get('/diary/edit/:id', async c => {
   const note = await c.env.DB.prepare('SELECT * FROM notes WHERE id = ?').bind(c.req.param('id')).first();
   return c.html(html`
@@ -581,6 +583,7 @@ app.get('/diary/edit/:id', async c => {
   `);
 });
 app.post('/diary/edit/:id', async c => { await c.env.DB.prepare('UPDATE notes SET content = ? WHERE id = ?').bind((await c.req.parseBody())['content'], c.req.param('id')).run(); return c.redirect('/diary'); });
+
 app.get('/diary/post', c => {
   return c.html(html`
     <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>新規投稿</title></head>
