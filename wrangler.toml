@@ -12,3 +12,6 @@ database_id = "25f65336-485f-4cb8-8186-64d051e91de3"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "my-images"
+
+[vars]
+GOOGLE_MAPS_API_KEY = "AIzaSyDrkF2r6M_CQdjrTgk1awz6iQBsPptWSV4"
