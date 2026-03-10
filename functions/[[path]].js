@@ -75,18 +75,43 @@ const renderNewsTab = (items, tabId, isActive) => html`
 
 // --- 3. メインレイアウト ---
 app.get('/', async (c) => {
-  const [news, dbNotes, dbTodos, dbChatsRaw, dbMemos, dbCheckinsRaw] = await Promise.all([
+  // 日付の計算 (JST基準)
+  const tokyoDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+  const yyyy = tokyoDate.getFullYear();
+  const mm = String(tokyoDate.getMonth() + 1).padStart(2, '0');
+  const dd = String(tokyoDate.getDate()).padStart(2, '0');
+  const defaultDate = `${yyyy}-${mm}-${dd}`;
+  
+  // ユーザーが選んだ日付（なければ今日）
+  const targetDate = c.req.query('date') || defaultDate;
+  
+  // 5年間の制限用（カレンダーの最小値）
+  const minDate = `${yyyy - 5}-${mm}-${dd}`;
+
+  // 指定した日の00:00:00 〜 23:59:59 (JST) のタイムスタンプを計算
+  const startOfDay = new Date(`${targetDate}T00:00:00+09:00`).getTime();
+  const endOfDay = new Date(`${targetDate}T23:59:59+09:00`).getTime();
+
+  const [news, dbNotes, dbTodos, dbChatsRaw, dbMemos, dbCheckinsRaw, dbMapNotesRaw] = await Promise.all([
     fetchNews(),
-    c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 6').all(),
+    c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 6').all(), // トップ最新日記用
     c.env.DB.prepare('SELECT * FROM todos ORDER BY is_completed ASC, created_at DESC').all(),
     c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 30').all(),
     c.env.DB.prepare('SELECT * FROM quick_memo ORDER BY id DESC').all(),
-    c.env.DB.prepare('SELECT * FROM checkins ORDER BY created_at DESC LIMIT 50').all()
+    // 地図用：指定した日のチェックイン履歴
+    c.env.DB.prepare('SELECT * FROM checkins WHERE created_at >= ? AND created_at <= ? ORDER BY created_at ASC').bind(startOfDay, endOfDay).all(),
+    // 地図用：指定した日で、位置情報(lat)を持っている日記
+    c.env.DB.prepare('SELECT * FROM notes WHERE lat IS NOT NULL AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC').bind(startOfDay, endOfDay).all()
   ]);
-  const chatHistory = dbChatsRaw.results.reverse();
-  const checkins = dbCheckinsRaw.results.reverse();
 
-  // ここからHTMLを返します (閉じ忘れがないように綺麗に整理しました)
+  const chatHistory = dbChatsRaw.results.reverse();
+  
+  // 地図に描画するためのデータを合体させて時間順に並べる
+  const mapPoints = [
+    ...dbCheckinsRaw.results.map(c => ({ type: 'checkin', id: c.id, lat: c.lat, lng: c.lng, time: c.created_at })),
+    ...dbMapNotesRaw.results.map(n => ({ type: 'diary', id: n.id, lat: n.lat, lng: n.lng, time: n.created_at, content: n.content, image: n.image_url }))
+  ].sort((a, b) => a.time - b.time);
+
   return c.html(html`
 <!DOCTYPE html>
 <html lang="ja">
@@ -234,6 +259,9 @@ app.get('/', async (c) => {
                 "symbols": [
                   { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
                   { "name": "AMEX:VOO", "displayName": "Vanguard S&P 500 ETF" },
+                  { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
+                  { "name": "TSE:9432", "displayName": "NTT" },
+                  { "name": "TSE:4755", "displayName": "楽天グループ" },
                   { "name": "NYSE:KO", "displayName": "Coca-Cola" },
                   { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
                   { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
@@ -279,13 +307,42 @@ app.get('/', async (c) => {
       </div>
 
       <div class="card col-span-3">
-        <div class="card-header"><span class="card-icon">🗺️</span> 行動軌跡トラッカー</div>
+        <div class="card-header chat-header-flex">
+          <div><span class="card-icon">🗺️</span> 行動軌跡トラッカー</div>
+          <input type="date" value="${targetDate}" min="${minDate}" max="${defaultDate}" onchange="window.location.href='/?date='+this.value" style="padding:6px 12px; border:1px solid var(--border); border-radius:8px; font-weight:bold; color:var(--text-main); font-size:14px; outline:none;">
+        </div>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
           <div style="font-size:1rem; color:var(--text-muted); font-weight:bold;">総移動距離: <span id="total-distance" style="color:var(--primary); font-size:1.4rem;">0</span> km</div>
           <button onclick="manualCheckin()" style="padding:10px 20px; background:var(--button-dark); color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">📍 今ここを記録する</button>
         </div>
+        
         <div id="map" style="height:400px; border-radius:12px; border:1px solid var(--border); z-index:1;"></div>
+
+        <div style="margin-top: 15px; max-height: 200px; overflow-y: auto; display:flex; flex-direction:column; gap:8px;">
+          ${mapPoints.length === 0 ? html`<div style="font-size:0.9rem; color:var(--text-muted); text-align:center; padding:10px;">この日の記録はありません。</div>` : ''}
+          ${mapPoints.map(p => {
+            const d = new Date(p.time);
+            const timeStr = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+            return html`
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:#f8fafc; border-radius:8px; border:1px solid var(--border); font-size:0.9rem;">
+                <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                  <span style="font-size:1.2rem;">${p.type === 'checkin' ? '📍' : '📝'}</span>
+                  <b style="min-width:40px;">${timeStr}</b>
+                  <span style="color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    ${p.type === 'diary' ? p.content : '現在地チェックイン'}
+                  </span>
+                </div>
+                <form method="POST" action="${p.type === 'checkin' ? '/api/checkin/delete' : '/diary/delete'}" style="margin:0; flex-shrink:0;" onsubmit="return confirm('この履歴を削除しますか？');">
+                  <input type="hidden" name="id" value="${p.id}">
+                  <input type="hidden" name="date" value="${targetDate}">
+                  <button type="submit" style="background:none; border:none; color:#ef4444; font-size:1.4rem; cursor:pointer; font-weight:bold; padding:0 5px;">×</button>
+                </form>
+              </div>
+            `;
+          })}
+        </div>
       </div>
+
     </div>
 
     <script>
@@ -368,27 +425,44 @@ app.get('/', async (c) => {
         btn.disabled = false; historyDiv.scrollTop = historyDiv.scrollHeight;
       });
 
-      // 地図
-      const checkins = ${raw(JSON.stringify(checkins))};
-      const map = L.map('map').setView([35.8617, 139.6455], 13);
+      // --- 地図 (Leaflet.js) カスタムピン対応 ---
+      const mapPoints = ${raw(JSON.stringify(mapPoints))};
+      const map = L.map('map');
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 
-      if(checkins && checkins.length > 0) {
-        const latlngs = checkins.map(c => [c.lat, c.lng]);
+      if(mapPoints && mapPoints.length > 0) {
+        const latlngs = mapPoints.map(p => [p.lat, p.lng]);
         const polyline = L.polyline(latlngs, {color: '#ef4444', weight: 4, opacity: 0.8}).addTo(map);
         map.fitBounds(polyline.getBounds(), {padding: [30,30]});
         
-        checkins.forEach((c) => {
-          const d = new Date(c.created_at);
-          const timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
-          L.marker([c.lat, c.lng]).addTo(map).bindPopup("📍 " + timeStr);
+        mapPoints.forEach(p => {
+          const d = new Date(p.time);
+          const timeStr = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+          let popupHtml = "";
+          let iconStr = "📍";
+          
+          if(p.type === 'diary') {
+            iconStr = "📝";
+            popupHtml = \`<b>📝 日記 (\${timeStr})</b><br>\${p.content}\`;
+            if(p.image) popupHtml += \`<br><img src="\${p.image}" style="width:100%; margin-top:5px; border-radius:4px;">\`;
+          } else {
+            popupHtml = \`<b>📍 チェックイン</b><br>\${timeStr}\`;
+          }
+
+          const customIcon = L.divIcon({
+            html: \`<div style="font-size:24px; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">\${iconStr}</div>\`,
+            className: '', iconSize: [24, 24], iconAnchor: [12, 24], popupAnchor: [0, -24]
+          });
+
+          L.marker([p.lat, p.lng], {icon: customIcon}).addTo(map).bindPopup(popupHtml);
         });
         
         let totalKm = 0;
-        for(let i=1; i<latlngs.length; i++){
-          totalKm += map.distance(latlngs[i-1], latlngs[i]) / 1000;
-        }
+        for(let i=1; i<latlngs.length; i++){ totalKm += map.distance(latlngs[i-1], latlngs[i]) / 1000; }
         document.getElementById('total-distance').textContent = totalKm.toFixed(1);
+      } else {
+        // データがない日は埼玉を中心に表示
+        map.setView([35.8617, 139.6455], 13);
       }
 
       window.manualCheckin = function() {
@@ -405,10 +479,17 @@ app.get('/', async (c) => {
 </body>
 </html>
   `);
-}); // <-- ここが、最後の閉じカッコです！
+});
 
 // --- API ---
 app.post('/api/checkin', async c => { const { lat, lng } = await c.req.json(); await c.env.DB.prepare('INSERT INTO checkins (lat, lng, created_at) VALUES (?, ?, ?)').bind(lat, lng, Date.now()).run(); return c.json({ success: true }); });
+// 履歴の削除 API (削除後は元の日付の画面に戻る)
+app.post('/api/checkin/delete', async c => { 
+  const b = await c.req.parseBody(); 
+  await c.env.DB.prepare('DELETE FROM checkins WHERE id = ?').bind(b['id']).run(); 
+  return c.redirect('/?date=' + b['date']); 
+});
+
 app.post('/memo/add', async c => { await c.env.DB.prepare('INSERT INTO quick_memo (content) VALUES (?)').bind((await c.req.parseBody())['content']).run(); return c.redirect('/'); });
 app.post('/memo/delete', async c => { await c.env.DB.prepare('DELETE FROM quick_memo WHERE id = ?').bind((await c.req.parseBody())['id']).run(); return c.redirect('/'); });
 app.post('/api/memo/update', async c => { const { id, content } = await c.req.json(); await c.env.DB.prepare('UPDATE quick_memo SET content = ? WHERE id = ?').bind(content, id).run(); return c.json({ success: true }); });
@@ -456,7 +537,15 @@ app.get('/diary', async c => {
     </body></html>
   `);
 });
-app.post('/diary/delete', async c => { await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind((await c.req.parseBody())['id']).run(); return c.redirect('/diary'); });
+
+// 日記の削除（トップページからの削除にも対応）
+app.post('/diary/delete', async c => { 
+  const b = await c.req.parseBody(); 
+  await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(b['id']).run(); 
+  if(b['date']) return c.redirect('/?date=' + b['date']); // 地図画面から消した場合はその日付に戻る
+  return c.redirect('/diary'); 
+});
+
 app.get('/diary/edit/:id', async c => {
   const note = await c.env.DB.prepare('SELECT * FROM notes WHERE id = ?').bind(c.req.param('id')).first();
   return c.html(html`
@@ -470,23 +559,58 @@ app.get('/diary/edit/:id', async c => {
   `);
 });
 app.post('/diary/edit/:id', async c => { await c.env.DB.prepare('UPDATE notes SET content = ? WHERE id = ?').bind((await c.req.parseBody())['content'], c.req.param('id')).run(); return c.redirect('/diary'); });
+
+// 日記投稿画面（GPS取得機能付き）
 app.get('/diary/post', c => {
   return c.html(html`
     <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>新規投稿</title></head>
     <body style="font-family:sans-serif; background:#f8fafc; margin:0; padding:20px;">
-      <a href="/" style="color:#3b82f6; text-decoration:none;">← ホームへ戻る</a>
+      <a href="/" style="color:#3b82f6; text-decoration:none; font-weight:bold;">← ホームへ戻る</a>
       <div style="max-width:600px; background:#fff; padding:20px; border-radius:12px; margin-top:15px;">
         <h2 style="margin-top:0;">新しい記録を追加</h2>
-        <form method="POST" action="/diary/post" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:15px;"><textarea name="content" rows="6" placeholder="いまどうしてる？" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0;"></textarea><input type="file" name="image" accept="image/*"><button type="submit" style="padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold;">保存する</button></form>
+        <form method="POST" action="/diary/post" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:15px;">
+          <textarea name="content" rows="6" placeholder="いまどうしてる？" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0; font-size:16px;"></textarea>
+          <input type="file" name="image" accept="image/*">
+          
+          <input type="hidden" name="lat" id="lat">
+          <input type="hidden" name="lng" id="lng">
+          
+          <button type="submit" style="padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold; font-size:16px;">保存する</button>
+        </form>
+        <div id="gps-status" style="font-size:0.8rem; color:#64748b; margin-top:15px; font-weight:bold;">📍 位置情報を取得中...</div>
       </div>
+      <script>
+        if(navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(pos => {
+            document.getElementById('lat').value = pos.coords.latitude;
+            document.getElementById('lng').value = pos.coords.longitude;
+            document.getElementById('gps-status').textContent = '📍 現在の位置情報を写真やメモと一緒に残せます';
+            document.getElementById('gps-status').style.color = '#3b82f6';
+          }, () => {
+            document.getElementById('gps-status').textContent = '⚠️ 位置情報が取得できませんでした';
+          }, {enableHighAccuracy: true});
+        }
+      </script>
     </body></html>
   `);
 });
+
+// 日記の保存処理（位置情報も含めるように変更）
 app.post('/diary/post', async c => {
-  const b = await c.req.parseBody(); let img = null;
-  if (b['image'] instanceof File && b['image'].size > 0) { const fn = `${Date.now()}-${b['image'].name}`; await c.env.BUCKET.put(fn, await b['image'].arrayBuffer(), { httpMetadata: { contentType: b['image'].type } }); img = `/images/${fn}`; }
-  await c.env.DB.prepare('INSERT INTO notes (content, image_url, created_at) VALUES (?, ?, ?)').bind(b['content'], img, Date.now()).run(); return c.redirect('/');
+  const b = await c.req.parseBody(); 
+  let img = null;
+  if (b['image'] instanceof File && b['image'].size > 0) { 
+    const fn = `${Date.now()}-${b['image'].name}`; 
+    await c.env.BUCKET.put(fn, await b['image'].arrayBuffer(), { httpMetadata: { contentType: b['image'].type } }); 
+    img = `/images/${fn}`; 
+  }
+  const lat = b['lat'] ? parseFloat(b['lat']) : null;
+  const lng = b['lng'] ? parseFloat(b['lng']) : null;
+  
+  await c.env.DB.prepare('INSERT INTO notes (content, image_url, lat, lng, created_at) VALUES (?, ?, ?, ?, ?)').bind(b['content'], img, lat, lng, Date.now()).run(); 
+  return c.redirect('/');
 });
+
 app.get('/images/:key', async c => {
   const obj = await c.env.BUCKET.get(c.req.param('key'));
   if (!obj) return c.text('Not Found', 404);
