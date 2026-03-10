@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
-import { html } from 'hono/html';
+import { html, raw } from 'hono/html'; // ★ raw を追加しました
 
 const app = new Hono();
 
@@ -84,7 +84,7 @@ app.get('/', async (c) => {
     c.env.DB.prepare('SELECT * FROM checkins ORDER BY created_at DESC LIMIT 50').all()
   ]);
   const chatHistory = dbChatsRaw.results.reverse();
-  const checkins = dbCheckinsRaw.results.reverse(); // 古い順に戻して線をつなぐ
+  const checkins = dbCheckinsRaw.results.reverse();
 
   return c.html(html`
 <!DOCTYPE html>
@@ -295,7 +295,6 @@ app.get('/', async (c) => {
     </div>
 
     <script>
-      // 時計
       function updateClock() {
         const now = new Date(); document.getElementById('time-display').textContent = now.toLocaleTimeString('ja-JP', { hour12: false });
         const dateOptions = { era: 'long', year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' };
@@ -304,7 +303,6 @@ app.get('/', async (c) => {
         document.getElementById('koyomi-display').textContent = \`西暦\${now.getFullYear()}年 / 旧暦: \${oldMonths[now.getMonth()]}\`;
       } setInterval(updateClock, 1000); updateClock();
 
-      // 天気
       async function loadWeather() {
         try {
           const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=35.8617&longitude=139.6455&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4');
@@ -332,7 +330,6 @@ app.get('/', async (c) => {
         } catch (e) { document.getElementById('weather-widget').innerHTML = '取得失敗'; }
       } loadWeather();
 
-      // ニュースタブ
       const tabBtns = document.querySelectorAll('.tab-btn');
       const newsLists = document.querySelectorAll('.news-list');
       tabBtns.forEach(btn => {
@@ -342,7 +339,6 @@ app.get('/', async (c) => {
         });
       });
 
-      // メモ
       document.querySelectorAll('.memo-textarea').forEach(t => {
         t.style.height = t.scrollHeight + 'px';
         let to;
@@ -353,7 +349,6 @@ app.get('/', async (c) => {
         });
       });
 
-      // Gemini
       const historyDiv = document.getElementById('chat-history'); historyDiv.scrollTop = historyDiv.scrollHeight;
       let imgData = null, imgMime = null;
       const fileInput = document.getElementById('chat-image-input'), prevContainer = document.getElementById('image-preview-container'), prevImg = document.getElementById('image-preview');
@@ -380,25 +375,23 @@ app.get('/', async (c) => {
       });
 
       // --- 地図 (Leaflet.js) ---
-      const checkins = ${JSON.stringify(checkins)};
-      const map = L.map('map').setView([35.8617, 139.6455], 13); // 初期位置はさいたま市
+      // ★ ここが修正のメイン部分です (raw() を追加し安全に出力)
+      const checkins = ${raw(JSON.stringify(checkins))};
+      const map = L.map('map').setView([35.8617, 139.6455], 13);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 
-      if(checkins.length > 0) {
+      if(checkins && checkins.length > 0) {
         const latlngs = checkins.map(c => [c.lat, c.lng]);
         
-        // 軌跡を赤い線で引く
         const polyline = L.polyline(latlngs, {color: '#ef4444', weight: 4, opacity: 0.8}).addTo(map);
-        map.fitBounds(polyline.getBounds(), {padding: [30,30]}); // 全体が収まるようにズーム調整
+        map.fitBounds(polyline.getBounds(), {padding: [30,30]});
         
-        // 各ポイントにピンを立てる
         checkins.forEach((c) => {
           const d = new Date(c.created_at);
           const timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
           L.marker([c.lat, c.lng]).addTo(map).bindPopup("📍 " + timeStr);
         });
         
-        // 移動距離の計算
         let totalKm = 0;
         for(let i=1; i<latlngs.length; i++){
           totalKm += map.distance(latlngs[i-1], latlngs[i]) / 1000;
@@ -406,14 +399,13 @@ app.get('/', async (c) => {
         document.getElementById('total-distance').textContent = totalKm.toFixed(1);
       }
 
-      // 手動チェックインボタンの処理
       window.manualCheckin = function() {
         if(!navigator.geolocation) return alert('GPS非対応です');
         const btn = event.target;
         btn.textContent = "⏳ 記録中..."; btn.disabled = true;
         navigator.geolocation.getCurrentPosition(async pos => {
           await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat:pos.coords.latitude, lng:pos.coords.longitude})});
-          location.reload(); // 記録後にリロードして地図を更新
+          location.reload(); 
         }, () => { alert('位置情報の取得に失敗しました'); btn.textContent="📍 今ここを記録する"; btn.disabled=false; }, {enableHighAccuracy: true});
       }
     </script>
