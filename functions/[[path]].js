@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
-import { html, raw } from 'hono/html'; // ★ raw を追加しました
+import { html, raw } from 'hono/html';
 
 const app = new Hono();
 
-// --- 1. PWA (ショートカット機能追加) ---
+// --- 1. PWA ---
 app.get('/manifest.json', c => c.json({
   name: "My Dashboard", short_name: "Dashboard", start_url: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#3b82f6",
   icons: [{ src: "/icon.svg", sizes: "512x512", type: "image/svg+xml" }],
@@ -13,7 +13,7 @@ app.get('/manifest.json', c => c.json({
 app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
 app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
 
-// --- 専用アプリボタンから飛んでくるチェックイン画面 ---
+// --- チェックイン画面 ---
 app.get('/checkin', c => c.html(`
 <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>Check-in</title></head>
 <body style="background:#f8fafc; color:#0f172a; text-align:center; padding-top:100px; font-family:sans-serif;">
@@ -24,7 +24,7 @@ app.get('/checkin', c => c.html(`
       document.getElementById('msg').textContent = '💾 データベースに記録中...';
       await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat:pos.coords.latitude, lng:pos.coords.longitude})});
       window.location.href = '/';
-    }, () => { alert('位置情報の取得に失敗しました。スマホの設定でブラウザのGPSを許可してください。'); window.location.href='/'; }, {enableHighAccuracy: true});
+    }, () => { alert('位置情報の取得に失敗しました。'); window.location.href='/'; }, {enableHighAccuracy: true});
   </script>
 </body></html>
 `));
@@ -86,6 +86,7 @@ app.get('/', async (c) => {
   const chatHistory = dbChatsRaw.results.reverse();
   const checkins = dbCheckinsRaw.results.reverse();
 
+  // ここからHTMLを返します (閉じ忘れがないように綺麗に整理しました)
   return c.html(html`
 <!DOCTYPE html>
 <html lang="ja">
@@ -96,10 +97,8 @@ app.get('/', async (c) => {
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <title>My Dashboard</title>
-  
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
   <style>
     :root { --bg: #f8fafc; --card-bg: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --border: #e2e8f0; --primary: #3b82f6; --primary-light: #eff6ff; --button-dark: #1e293b; --radius: 16px; }
     body { margin: 0; background: var(--bg); color: var(--text-main); font-family: -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
@@ -155,8 +154,6 @@ app.get('/', async (c) => {
     .diary-card img { width: 100%; height: 100%; object-fit: cover; }
     .diary-card .overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: white; padding: 8px; font-size: 12px; font-weight: bold; }
     .diary-card.no-image { background: var(--bg); padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--border); }
-    
-    /* 地図のスタイル補正 */
     .leaflet-control-attribution { font-size: 10px !important; }
   </style>
 </head>
@@ -374,15 +371,13 @@ app.get('/', async (c) => {
         btn.disabled = false; historyDiv.scrollTop = historyDiv.scrollHeight;
       });
 
-      // --- 地図 (Leaflet.js) ---
-      // ★ ここが修正のメイン部分です (raw() を追加し安全に出力)
+      // 地図
       const checkins = ${raw(JSON.stringify(checkins))};
       const map = L.map('map').setView([35.8617, 139.6455], 13);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 
       if(checkins && checkins.length > 0) {
         const latlngs = checkins.map(c => [c.lat, c.lng]);
-        
         const polyline = L.polyline(latlngs, {color: '#ef4444', weight: 4, opacity: 0.8}).addTo(map);
         map.fitBounds(polyline.getBounds(), {padding: [30,30]});
         
@@ -412,12 +407,11 @@ app.get('/', async (c) => {
   </main>
 </body>
 </html>
-  `)});
-});
+  `);
+}); // <-- ここが、最後の閉じカッコです！
 
 // --- API ---
 app.post('/api/checkin', async c => { const { lat, lng } = await c.req.json(); await c.env.DB.prepare('INSERT INTO checkins (lat, lng, created_at) VALUES (?, ?, ?)').bind(lat, lng, Date.now()).run(); return c.json({ success: true }); });
-
 app.post('/memo/add', async c => { await c.env.DB.prepare('INSERT INTO quick_memo (content) VALUES (?)').bind((await c.req.parseBody())['content']).run(); return c.redirect('/'); });
 app.post('/memo/delete', async c => { await c.env.DB.prepare('DELETE FROM quick_memo WHERE id = ?').bind((await c.req.parseBody())['id']).run(); return c.redirect('/'); });
 app.post('/api/memo/update', async c => { const { id, content } = await c.req.json(); await c.env.DB.prepare('UPDATE quick_memo SET content = ? WHERE id = ?').bind(content, id).run(); return c.json({ success: true }); });
@@ -431,19 +425,16 @@ app.post('/api/gemini', async (c) => {
   const apiKey = c.env.GEMINI_API_KEY;
   if (!apiKey) return c.json({ response: "APIキー未設定" });
   await c.env.DB.prepare('INSERT INTO chats (role, message, created_at) VALUES (?, ?, ?)').bind('user', imageBase64 ? `[📷画像] ${prompt}` : prompt, Date.now()).run();
-  
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const system_instruction = { parts: [{ text: "ユーザーが「今日のニュース」と聞いた場合、政治・経済、国内、国際、マーケット、IT、天気予報のジャンルに分け、簡単な説明と参照元URLを含めて回答してください。FXのPOGはPerfect Orderのことです。" }] };
     const requestParts = [{ text: prompt }];
     if (imageBase64 && imageMimeType) requestParts.push({ inline_data: { mime_type: imageMimeType, data: imageBase64 } });
-
     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system_instruction, contents: [{ parts: requestParts }] }) });
     const data = await response.json();
     if (!response.ok) return c.json({ response: `APIエラー: ${data.error?.message}` });
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) return c.json({ response: `ブロックされました: ${data.candidates?.[0]?.finishReason}` });
-    
     await c.env.DB.prepare('INSERT INTO chats (role, message, created_at) VALUES (?, ?, ?)').bind('ai', text, Date.now()).run();
     return c.json({ response: text });
   } catch (e) { return c.json({ response: "エラー: " + e.message }); }
@@ -460,12 +451,8 @@ app.get('/diary', async c => {
       <div style="max-width:600px; display:flex; flex-direction:column; gap:15px;">
         ${results.map(n => html`
           <div style="background:#fff; padding:15px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-              <span style="color:#64748b; font-size:0.9rem;">${new Date(n.created_at).toLocaleString('ja-JP')}</span>
-              <div style="display:flex; gap:10px;"><a href="/diary/edit/${n.id}" style="color:#3b82f6; font-size:0.9rem; text-decoration:none;">編集</a><form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${n.id}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; text-decoration:underline; padding:0;">削除</button></form></div>
-            </div>
-            <p style="margin:0; white-space:pre-wrap;">${n.content}</p>
-            ${n.image_url ? html`<img src="${n.image_url}" style="margin-top:10px; border-radius:8px; max-width:100%;">` : ''}
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:#64748b; font-size:0.9rem;">${new Date(n.created_at).toLocaleString('ja-JP')}</span><div style="display:flex; gap:10px;"><a href="/diary/edit/${n.id}" style="color:#3b82f6; font-size:0.9rem; text-decoration:none;">編集</a><form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${n.id}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; text-decoration:underline; padding:0;">削除</button></form></div></div>
+            <p style="margin:0; white-space:pre-wrap;">${n.content}</p>${n.image_url ? html`<img src="${n.image_url}" style="margin-top:10px; border-radius:8px; max-width:100%;">` : ''}
           </div>
         `)}
       </div>
@@ -480,10 +467,7 @@ app.get('/diary/edit/:id', async c => {
     <body style="font-family:sans-serif; background:#f8fafc; margin:0; padding:20px;">
       <div style="max-width:600px; background:#fff; padding:20px; border-radius:12px;">
         <h2 style="margin-top:0;">記録を編集</h2>
-        <form method="POST" action="/diary/edit/${note.id}" style="display:flex; flex-direction:column; gap:15px;">
-          <textarea name="content" rows="6" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0;">${note.content}</textarea>
-          <div style="display:flex; gap:10px;"><button type="submit" style="flex:1; padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold;">更新する</button><a href="/diary" style="padding:12px 20px; background:#e2e8f0; color:#0f172a; border-radius:8px; text-decoration:none; font-weight:bold;">キャンセル</a></div>
-        </form>
+        <form method="POST" action="/diary/edit/${note.id}" style="display:flex; flex-direction:column; gap:15px;"><textarea name="content" rows="6" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0;">${note.content}</textarea><div style="display:flex; gap:10px;"><button type="submit" style="flex:1; padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold;">更新する</button><a href="/diary" style="padding:12px 20px; background:#e2e8f0; color:#0f172a; border-radius:8px; text-decoration:none; font-weight:bold;">キャンセル</a></div></form>
       </div>
     </body></html>
   `);
