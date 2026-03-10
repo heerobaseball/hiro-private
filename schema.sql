@@ -40,3 +40,10 @@ CREATE TABLE IF NOT EXISTS quick_memo (
 );
 /* 初期データとして空のメモを1行だけ作成しておきます */
 INSERT INTO quick_memo (id, content) VALUES (1, '');
+
+CREATE TABLE IF NOT EXISTS checkins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lat REAL NOT NULL,
+  lng REAL NOT NULL,
+  created_at INTEGER NOT NULL
+);

@@ -4,24 +4,40 @@ import { html } from 'hono/html';
 
 const app = new Hono();
 
-// --- 1. PWA ---
-app.get('/manifest.json', c => c.json({ name: "My Dashboard", short_name: "Dashboard", start_url: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#3b82f6", icons: [{ src: "/icon.svg", sizes: "512x512", type: "image/svg+xml" }] }));
+// --- 1. PWA (ショートカット機能追加) ---
+app.get('/manifest.json', c => c.json({
+  name: "My Dashboard", short_name: "Dashboard", start_url: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#3b82f6",
+  icons: [{ src: "/icon.svg", sizes: "512x512", type: "image/svg+xml" }],
+  shortcuts: [{ name: "現在地にチェックイン", short_name: "📍 チェックイン", url: "/checkin", icons: [{ src: "/icon.svg", sizes: "192x192" }] }]
+}));
 app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
 app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
 
+// --- 専用アプリボタンから飛んでくるチェックイン画面 ---
+app.get('/checkin', c => c.html(`
+<!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>Check-in</title></head>
+<body style="background:#f8fafc; color:#0f172a; text-align:center; padding-top:100px; font-family:sans-serif;">
+  <h2 id="msg">📍 GPSで現在地を取得中...</h2>
+  <script>
+    if(!navigator.geolocation) { alert('GPS非対応です'); window.location.href='/'; }
+    navigator.geolocation.getCurrentPosition(async pos => {
+      document.getElementById('msg').textContent = '💾 データベースに記録中...';
+      await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat:pos.coords.latitude, lng:pos.coords.longitude})});
+      window.location.href = '/';
+    }, () => { alert('位置情報の取得に失敗しました。スマホの設定でブラウザのGPSを許可してください。'); window.location.href='/'; }, {enableHighAccuracy: true});
+  </script>
+</body></html>
+`));
+
 // --- 2. ニュース取得 ---
 async function fetchNews() {
-  // 取得元を専門的な3社に限定するフィルター
   const baseQuery = "site:bloomberg.co.jp OR site:jp.reuters.com OR site:nikkei.com";
-  
-  // 各タブごとに、3社の中からさらにキーワードで絞り込む
   const queries = {
     top: `https://news.google.com/rss/search?q=${encodeURIComponent(baseQuery)}&hl=ja&gl=JP&ceid=JP:ja`,
     biz: `https://news.google.com/rss/search?q=${encodeURIComponent('政治 OR 経済 ' + baseQuery)}&hl=ja&gl=JP&ceid=JP:ja`,
     market: `https://news.google.com/rss/search?q=${encodeURIComponent('株 OR 為替 OR マーケット ' + baseQuery)}&hl=ja&gl=JP&ceid=JP:ja`,
     it: `https://news.google.com/rss/search?q=${encodeURIComponent('IT OR AI OR テクノロジー ' + baseQuery)}&hl=ja&gl=JP&ceid=JP:ja`
   };
-  
   const results = {};
   for (const [key, url] of Object.entries(queries)) {
     try {
@@ -31,7 +47,7 @@ async function fetchNews() {
       const regex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<source.*?>(.*?)<\/source>/g;
       let match;
       while ((match = regex.exec(text)) !== null) {
-        if (items.length >= 8) break; // 各タブ8件まで取得
+        if (items.length >= 8) break;
         let imgUrl = null;
         const imgMatch = match[3].match(/<img[^>]+src="([^">]+)"/);
         if (imgMatch) imgUrl = imgMatch[1];
@@ -59,14 +75,16 @@ const renderNewsTab = (items, tabId, isActive) => html`
 
 // --- 3. メインレイアウト ---
 app.get('/', async (c) => {
-  const [news, dbNotes, dbTodos, dbChatsRaw, dbMemos] = await Promise.all([
+  const [news, dbNotes, dbTodos, dbChatsRaw, dbMemos, dbCheckinsRaw] = await Promise.all([
     fetchNews(),
     c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 6').all(),
     c.env.DB.prepare('SELECT * FROM todos ORDER BY is_completed ASC, created_at DESC').all(),
     c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 30').all(),
-    c.env.DB.prepare('SELECT * FROM quick_memo ORDER BY id DESC').all()
+    c.env.DB.prepare('SELECT * FROM quick_memo ORDER BY id DESC').all(),
+    c.env.DB.prepare('SELECT * FROM checkins ORDER BY created_at DESC LIMIT 50').all()
   ]);
   const chatHistory = dbChatsRaw.results.reverse();
+  const checkins = dbCheckinsRaw.results.reverse(); // 古い順に戻して線をつなぐ
 
   return c.html(html`
 <!DOCTYPE html>
@@ -78,6 +96,10 @@ app.get('/', async (c) => {
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <title>My Dashboard</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <style>
     :root { --bg: #f8fafc; --card-bg: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --border: #e2e8f0; --primary: #3b82f6; --primary-light: #eff6ff; --button-dark: #1e293b; --radius: 16px; }
     body { margin: 0; background: var(--bg); color: var(--text-main); font-family: -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
@@ -133,12 +155,16 @@ app.get('/', async (c) => {
     .diary-card img { width: 100%; height: 100%; object-fit: cover; }
     .diary-card .overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: white; padding: 8px; font-size: 12px; font-weight: bold; }
     .diary-card.no-image { background: var(--bg); padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--border); }
+    
+    /* 地図のスタイル補正 */
+    .leaflet-control-attribution { font-size: 10px !important; }
   </style>
 </head>
 <body>
   <header class="navbar"><div class="nav-brand">My Dashboard</div><div class="nav-links"><a href="/" class="active">Home</a><a href="/diary">Diary</a></div></header>
   <main>
     <div class="container">
+      
       <div class="card col-span-3" style="border-top: 4px solid var(--primary); justify-content: center; padding: 1.2rem 2rem;">
         <div class="clock-horizontal">
           <div class="date-jp" id="date-jp">--年--月--日</div>
@@ -211,6 +237,9 @@ app.get('/', async (c) => {
                 "symbols": [
                   { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
                   { "name": "AMEX:VOO", "displayName": "Vanguard S&P 500 ETF" },
+                  { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
+                  { "name": "TSE:9432", "displayName": "NTT" },
+                  { "name": "TSE:4755", "displayName": "楽天グループ" },
                   { "name": "NYSE:KO", "displayName": "Coca-Cola" },
                   { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
                   { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
@@ -254,9 +283,19 @@ app.get('/', async (c) => {
           })}
         </div>
       </div>
+
+      <div class="card col-span-3">
+        <div class="card-header"><span class="card-icon">🗺️</span> 行動軌跡トラッカー</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <div style="font-size:1rem; color:var(--text-muted); font-weight:bold;">総移動距離: <span id="total-distance" style="color:var(--primary); font-size:1.4rem;">0</span> km</div>
+          <button onclick="manualCheckin()" style="padding:10px 20px; background:var(--button-dark); color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">📍 今ここを記録する</button>
+        </div>
+        <div id="map" style="height:400px; border-radius:12px; border:1px solid var(--border); z-index:1;"></div>
+      </div>
     </div>
 
     <script>
+      // 時計
       function updateClock() {
         const now = new Date(); document.getElementById('time-display').textContent = now.toLocaleTimeString('ja-JP', { hour12: false });
         const dateOptions = { era: 'long', year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' };
@@ -265,6 +304,7 @@ app.get('/', async (c) => {
         document.getElementById('koyomi-display').textContent = \`西暦\${now.getFullYear()}年 / 旧暦: \${oldMonths[now.getMonth()]}\`;
       } setInterval(updateClock, 1000); updateClock();
 
+      // 天気
       async function loadWeather() {
         try {
           const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=35.8617&longitude=139.6455&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4');
@@ -292,6 +332,7 @@ app.get('/', async (c) => {
         } catch (e) { document.getElementById('weather-widget').innerHTML = '取得失敗'; }
       } loadWeather();
 
+      // ニュースタブ
       const tabBtns = document.querySelectorAll('.tab-btn');
       const newsLists = document.querySelectorAll('.news-list');
       tabBtns.forEach(btn => {
@@ -301,6 +342,7 @@ app.get('/', async (c) => {
         });
       });
 
+      // メモ
       document.querySelectorAll('.memo-textarea').forEach(t => {
         t.style.height = t.scrollHeight + 'px';
         let to;
@@ -311,6 +353,7 @@ app.get('/', async (c) => {
         });
       });
 
+      // Gemini
       const historyDiv = document.getElementById('chat-history'); historyDiv.scrollTop = historyDiv.scrollHeight;
       let imgData = null, imgMime = null;
       const fileInput = document.getElementById('chat-image-input'), prevContainer = document.getElementById('image-preview-container'), prevImg = document.getElementById('image-preview');
@@ -335,14 +378,54 @@ app.get('/', async (c) => {
         } catch (err) { historyDiv.innerHTML += \`<div class="chat-msg ai-msg" style="color:red;">エラー</div>\`; }
         btn.disabled = false; historyDiv.scrollTop = historyDiv.scrollHeight;
       });
+
+      // --- 地図 (Leaflet.js) ---
+      const checkins = ${JSON.stringify(checkins)};
+      const map = L.map('map').setView([35.8617, 139.6455], 13); // 初期位置はさいたま市
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+
+      if(checkins.length > 0) {
+        const latlngs = checkins.map(c => [c.lat, c.lng]);
+        
+        // 軌跡を赤い線で引く
+        const polyline = L.polyline(latlngs, {color: '#ef4444', weight: 4, opacity: 0.8}).addTo(map);
+        map.fitBounds(polyline.getBounds(), {padding: [30,30]}); // 全体が収まるようにズーム調整
+        
+        // 各ポイントにピンを立てる
+        checkins.forEach((c) => {
+          const d = new Date(c.created_at);
+          const timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+          L.marker([c.lat, c.lng]).addTo(map).bindPopup("📍 " + timeStr);
+        });
+        
+        // 移動距離の計算
+        let totalKm = 0;
+        for(let i=1; i<latlngs.length; i++){
+          totalKm += map.distance(latlngs[i-1], latlngs[i]) / 1000;
+        }
+        document.getElementById('total-distance').textContent = totalKm.toFixed(1);
+      }
+
+      // 手動チェックインボタンの処理
+      window.manualCheckin = function() {
+        if(!navigator.geolocation) return alert('GPS非対応です');
+        const btn = event.target;
+        btn.textContent = "⏳ 記録中..."; btn.disabled = true;
+        navigator.geolocation.getCurrentPosition(async pos => {
+          await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat:pos.coords.latitude, lng:pos.coords.longitude})});
+          location.reload(); // 記録後にリロードして地図を更新
+        }, () => { alert('位置情報の取得に失敗しました'); btn.textContent="📍 今ここを記録する"; btn.disabled=false; }, {enableHighAccuracy: true});
+      }
     </script>
   </main>
 </body>
 </html>
-  `);
+  `)});
 });
 
 // --- API ---
+app.post('/api/checkin', async c => { const { lat, lng } = await c.req.json(); await c.env.DB.prepare('INSERT INTO checkins (lat, lng, created_at) VALUES (?, ?, ?)').bind(lat, lng, Date.now()).run(); return c.json({ success: true }); });
+
 app.post('/memo/add', async c => { await c.env.DB.prepare('INSERT INTO quick_memo (content) VALUES (?)').bind((await c.req.parseBody())['content']).run(); return c.redirect('/'); });
 app.post('/memo/delete', async c => { await c.env.DB.prepare('DELETE FROM quick_memo WHERE id = ?').bind((await c.req.parseBody())['id']).run(); return c.redirect('/'); });
 app.post('/api/memo/update', async c => { const { id, content } = await c.req.json(); await c.env.DB.prepare('UPDATE quick_memo SET content = ? WHERE id = ?').bind(content, id).run(); return c.json({ success: true }); });
