@@ -492,11 +492,11 @@ app.get('/', async (c) => {
 });
 
 // --- API ---
-// ★ここに新しい【URL情報の取得API（クローラー）】を追加しました
-const getMeta = (html, prop) => {
+// ★ 修正箇所：正規表現のバックスラッシュを1つ減らしました
+const getMeta = (htmlText, prop) => {
   const reg = new RegExp(`<meta(?:\\s+[^>]*?)?(?:property|name)=["']${prop}["']\\s+content=["']([^"']*)["']`, 'i');
   const reg2 = new RegExp(`<meta(?:\\s+[^>]*?)?content=["']([^"']*)["']\\s+(?:property|name)=["']${prop}["']`, 'i');
-  const m = html.match(reg) || html.match(reg2);
+  const m = htmlText.match(reg) || htmlText.match(reg2);
   return m ? m[1] : null;
 };
 app.get('/api/ogp', async c => {
@@ -505,7 +505,7 @@ app.get('/api/ogp', async c => {
   try {
     const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
     const htmlText = await res.text();
-    let title = getMeta(htmlText, 'og:title') || getMeta(htmlText, 'twitter:title') || (htmlText.match(/<title>([^<]+)<\\/title>/i)?.[1]) || url;
+    let title = getMeta(htmlText, 'og:title') || getMeta(htmlText, 'twitter:title') || (htmlText.match(/<title>([^<]+)<\/title>/i)?.[1]) || url;
     let image = getMeta(htmlText, 'og:image') || getMeta(htmlText, 'twitter:image');
     let description = getMeta(htmlText, 'og:description') || getMeta(htmlText, 'description');
     return c.json({ title, image, description });
@@ -568,14 +568,11 @@ app.get('/diary', async c => {
       <script>
         document.querySelectorAll('.diary-text').forEach(el => {
           const text = el.textContent;
-          // 本文の中から http〜 で始まるURLを見つけ出す
           const urlRegex = /(https?:\\/\\/[^\\s]+)/g;
           
           if (urlRegex.test(text)) {
-            // URLを青いリンクに変換
             el.innerHTML = text.replace(urlRegex, '<a href="$1" class="auto-link" target="_blank" style="color:#3b82f6; word-break:break-all;">$1</a>');
             
-            // リンクのすぐ下にカードを展開
             el.querySelectorAll('.auto-link').forEach(async a => {
               const url = a.href;
               const card = document.createElement('a');
@@ -584,23 +581,19 @@ app.get('/diary', async c => {
               card.style.cssText = "display:flex; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; margin-top:10px; text-decoration:none; color:#0f172a; background:#f8fafc; height:80px; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:0.2s;";
               card.innerHTML = '<div style="padding:10px; font-size:0.8rem; color:#64748b;">🔗 リンク情報を読み込み中...</div>';
               
-              // aタグの直後にカードを挿入
               a.parentNode.insertBefore(card, a.nextSibling);
 
               try {
-                // 裏側のAPIに「このURLの情報を取ってきて！」とお願いする
                 const res = await fetch('/api/ogp?url=' + encodeURIComponent(url));
                 const ogp = await res.json();
                 
                 if (ogp.title) {
-                  // 情報が取れたら、美しいカードに書き換える
                   card.innerHTML = (ogp.image ? '<img src="' + ogp.image + '" style="width:80px; height:100%; object-fit:cover; border-right:1px solid #e2e8f0;">' : '<div style="width:80px; height:100%; background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:24px;">🔗</div>') + 
                     '<div style="padding:8px 10px; display:flex; flex-direction:column; justify-content:center; flex:1; overflow:hidden;">' +
                       '<div style="font-weight:bold; font-size:0.85rem; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">' + ogp.title + '</div>' +
                       '<div style="font-size:0.75rem; color:#64748b; margin-top:4px; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;">' + (ogp.description || new URL(url).hostname) + '</div>' +
                     '</div>';
                 } else {
-                  // 取得に失敗（OGP設定がないサイト）の場合はカードを消す
                   card.remove();
                 }
               } catch(e) {
