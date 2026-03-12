@@ -288,7 +288,6 @@ app.get('/', async (c) => {
         </div>
         <div class="diary-grid">
           ${dbNotes.results.map(note => {
-            // ★サーバーで日本時間(+9時間)に変換してから日付を取得
             const dDate = new Date(note.created_at + 9 * 3600000);
             const dateStr = dDate.getUTCFullYear() + '-' + String(dDate.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dDate.getUTCDate()).padStart(2, '0');
             if (note.image_url) { return html`<a href="/diary" class="diary-card"><img src="${note.image_url}" loading="lazy"><div class="overlay"><div>${dateStr}</div></div></a>`; }
@@ -319,7 +318,6 @@ app.get('/', async (c) => {
         <div style="margin-top: 15px; max-height: 200px; overflow-y: auto; display:flex; flex-direction:column; gap:8px;">
           ${mapPoints.length === 0 ? html`<div style="font-size:0.9rem; color:var(--text-muted); text-align:center; padding:10px;">この日の記録はありません。</div>` : ''}
           ${mapPoints.map(p => {
-            // ★サーバーで日本時間(+9時間)に変換してから時間を取得
             const d = new Date(p.time + 9 * 3600000);
             const timeStr = d.getUTCHours() + ':' + String(d.getUTCMinutes()).padStart(2,'0');
             return html`
@@ -430,33 +428,20 @@ app.get('/', async (c) => {
       window.initMap = function() {
         const mapElement = document.getElementById('map');
         if (!mapElement) return;
-
         const defaultLocation = { lat: 35.8617, lng: 139.6455 };
-        
         const map = new google.maps.Map(mapElement, {
-          zoom: 13,
-          center: defaultLocation,
-          mapTypeId: 'roadmap',
-          disableDefaultUI: true, 
-          zoomControl: true,
+          zoom: 13, center: defaultLocation, mapTypeId: 'roadmap', disableDefaultUI: true, zoomControl: true,
         });
 
         if(mapPoints && mapPoints.length > 0) {
           const pathCoordinates = mapPoints.map(p => ({ lat: p.lat, lng: p.lng }));
-          
           const flightPath = new google.maps.Polyline({
-            path: pathCoordinates,
-            geodesic: true,
-            strokeColor: '#ef4444',
-            strokeOpacity: 0.8,
-            strokeWeight: 4,
+            path: pathCoordinates, geodesic: true, strokeColor: '#ef4444', strokeOpacity: 0.8, strokeWeight: 4,
           });
           flightPath.setMap(map);
-          
           const bounds = new google.maps.LatLngBounds();
           
           mapPoints.forEach(p => {
-            // ★ ブラウザ側のJavaScriptはそのまま(スマホのローカル時間=日本時間を参照する)でOKです
             const d = new Date(p.time);
             const timeStr = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
             let popupHtml = "";
@@ -469,24 +454,14 @@ app.get('/', async (c) => {
             } else {
               popupHtml = '<b>📍 チェックイン</b><br>' + timeStr;
             }
-
             const position = { lat: p.lat, lng: p.lng };
             bounds.extend(position);
-
             const infowindow = new google.maps.InfoWindow({ content: popupHtml });
-
             const marker = new google.maps.Marker({
-              position: position,
-              map: map,
-              label: { text: iconLabel, fontSize: '20px' },
-              icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }
+              position: position, map: map, label: { text: iconLabel, fontSize: '20px' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }
             });
-
-            marker.addListener('click', () => {
-              infowindow.open(map, marker);
-            });
+            marker.addListener('click', () => { infowindow.open(map, marker); });
           });
-          
           map.fitBounds(bounds);
           
           let totalKm = 0;
@@ -517,6 +492,28 @@ app.get('/', async (c) => {
 });
 
 // --- API ---
+// ★ここに新しい【URL情報の取得API（クローラー）】を追加しました
+const getMeta = (html, prop) => {
+  const reg = new RegExp(`<meta(?:\\s+[^>]*?)?(?:property|name)=["']${prop}["']\\s+content=["']([^"']*)["']`, 'i');
+  const reg2 = new RegExp(`<meta(?:\\s+[^>]*?)?content=["']([^"']*)["']\\s+(?:property|name)=["']${prop}["']`, 'i');
+  const m = html.match(reg) || html.match(reg2);
+  return m ? m[1] : null;
+};
+app.get('/api/ogp', async c => {
+  const url = c.req.query('url');
+  if (!url) return c.json({ error: 'no url' }, 400);
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+    const htmlText = await res.text();
+    let title = getMeta(htmlText, 'og:title') || getMeta(htmlText, 'twitter:title') || (htmlText.match(/<title>([^<]+)<\\/title>/i)?.[1]) || url;
+    let image = getMeta(htmlText, 'og:image') || getMeta(htmlText, 'twitter:image');
+    let description = getMeta(htmlText, 'og:description') || getMeta(htmlText, 'description');
+    return c.json({ title, image, description });
+  } catch (e) {
+    return c.json({ error: 'failed' });
+  }
+});
+
 app.post('/api/checkin', async c => { const { lat, lng } = await c.req.json(); await c.env.DB.prepare('INSERT INTO checkins (lat, lng, created_at) VALUES (?, ?, ?)').bind(lat, lng, Date.now()).run(); return c.json({ success: true }); });
 app.post('/api/checkin/delete', async c => { const b = await c.req.parseBody(); await c.env.DB.prepare('DELETE FROM checkins WHERE id = ?').bind(b['id']).run(); return c.redirect('/?date=' + b['date']); });
 
@@ -555,15 +552,64 @@ app.get('/diary', async c => {
   return c.html(html`
     <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>日記一覧</title></head>
     <body style="font-family:sans-serif; background:#f8fafc; margin:0; padding:20px;">
-      <a href="/" style="color:#3b82f6; text-decoration:none;">← ホームへ戻る</a><h2 style="color:#0f172a;">全ての記録</h2>
+      <a href="/" style="color:#3b82f6; text-decoration:none; font-weight:bold;">← ホームへ戻る</a><h2 style="color:#0f172a;">全ての記録</h2>
       <div style="max-width:600px; display:flex; flex-direction:column; gap:15px;">
         ${results.map(n => html`
           <div style="background:#fff; padding:15px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
             <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:#64748b; font-size:0.9rem;">${new Date(n.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</span><div style="display:flex; gap:10px;"><a href="/diary/edit/${n.id}" style="color:#3b82f6; font-size:0.9rem; text-decoration:none;">編集</a><form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${n.id}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; text-decoration:underline; padding:0;">削除</button></form></div></div>
-            <p style="margin:0; white-space:pre-wrap;">${n.content}</p>${n.image_url ? html`<img src="${n.image_url}" style="margin-top:10px; border-radius:8px; max-width:100%;">` : ''}
+            
+            <p class="diary-text" style="margin:0; white-space:pre-wrap; line-height:1.5;">${n.content}</p>
+            
+            ${n.image_url ? html`<img src="${n.image_url}" style="margin-top:10px; border-radius:8px; max-width:100%;">` : ''}
           </div>
         `)}
       </div>
+
+      <script>
+        document.querySelectorAll('.diary-text').forEach(el => {
+          const text = el.textContent;
+          // 本文の中から http〜 で始まるURLを見つけ出す
+          const urlRegex = /(https?:\\/\\/[^\\s]+)/g;
+          
+          if (urlRegex.test(text)) {
+            // URLを青いリンクに変換
+            el.innerHTML = text.replace(urlRegex, '<a href="$1" class="auto-link" target="_blank" style="color:#3b82f6; word-break:break-all;">$1</a>');
+            
+            // リンクのすぐ下にカードを展開
+            el.querySelectorAll('.auto-link').forEach(async a => {
+              const url = a.href;
+              const card = document.createElement('a');
+              card.href = url;
+              card.target = "_blank";
+              card.style.cssText = "display:flex; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; margin-top:10px; text-decoration:none; color:#0f172a; background:#f8fafc; height:80px; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:0.2s;";
+              card.innerHTML = '<div style="padding:10px; font-size:0.8rem; color:#64748b;">🔗 リンク情報を読み込み中...</div>';
+              
+              // aタグの直後にカードを挿入
+              a.parentNode.insertBefore(card, a.nextSibling);
+
+              try {
+                // 裏側のAPIに「このURLの情報を取ってきて！」とお願いする
+                const res = await fetch('/api/ogp?url=' + encodeURIComponent(url));
+                const ogp = await res.json();
+                
+                if (ogp.title) {
+                  // 情報が取れたら、美しいカードに書き換える
+                  card.innerHTML = (ogp.image ? '<img src="' + ogp.image + '" style="width:80px; height:100%; object-fit:cover; border-right:1px solid #e2e8f0;">' : '<div style="width:80px; height:100%; background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:24px;">🔗</div>') + 
+                    '<div style="padding:8px 10px; display:flex; flex-direction:column; justify-content:center; flex:1; overflow:hidden;">' +
+                      '<div style="font-weight:bold; font-size:0.85rem; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">' + ogp.title + '</div>' +
+                      '<div style="font-size:0.75rem; color:#64748b; margin-top:4px; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;">' + (ogp.description || new URL(url).hostname) + '</div>' +
+                    '</div>';
+                } else {
+                  // 取得に失敗（OGP設定がないサイト）の場合はカードを消す
+                  card.remove();
+                }
+              } catch(e) {
+                card.remove();
+              }
+            });
+          }
+        });
+      </script>
     </body></html>
   `);
 });
@@ -592,7 +638,7 @@ app.get('/diary/post', c => {
       <div style="max-width:600px; background:#fff; padding:20px; border-radius:12px; margin-top:15px;">
         <h2 style="margin-top:0;">新しい記録を追加</h2>
         <form method="POST" action="/diary/post" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:15px;">
-          <textarea name="content" rows="6" placeholder="いまどうしてる？" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0; font-size:16px;"></textarea>
+          <textarea name="content" rows="6" placeholder="いまどうしてる？（URLを貼るとリンクカードになります）" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0; font-size:16px;"></textarea>
           <input type="file" name="image" accept="image/*">
           <input type="hidden" name="lat" id="lat"><input type="hidden" name="lng" id="lng">
           <button type="submit" style="padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold; font-size:16px;">保存する</button>
