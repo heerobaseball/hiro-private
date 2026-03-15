@@ -258,9 +258,6 @@ app.get('/', async (c) => {
                 "symbols": [
                   { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
                   { "name": "AMEX:VOO", "displayName": "Vanguard S&P 500 ETF" },
-                  { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
-                  { "name": "TSE:9432", "displayName": "NTT" },
-                  { "name": "TSE:4755", "displayName": "楽天グループ" },
                   { "name": "NYSE:KO", "displayName": "Coca-Cola" },
                   { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
                   { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
