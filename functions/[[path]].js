@@ -13,7 +13,7 @@ app.get('/manifest.json', c => c.json({
 app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
 app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
 
-// --- チェックイン画面 ---
+// --- チェックイン画面 (地名取得対応) ---
 app.get('/checkin', c => c.html(`
 <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>Check-in</title></head>
 <body style="background:#f8fafc; color:#0f172a; text-align:center; padding-top:100px; font-family:sans-serif;">
@@ -21,8 +21,16 @@ app.get('/checkin', c => c.html(`
   <script>
     if(!navigator.geolocation) { alert('GPS非対応です'); window.location.href='/'; }
     navigator.geolocation.getCurrentPosition(async pos => {
+      document.getElementById('msg').textContent = '📍 場所を特定中...';
+      const lat = pos.coords.latitude, lng = pos.coords.longitude;
+      let locName = null;
+      try {
+        const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);
+        const data = await res.json();
+        if(data.address) locName = (data.address.province || data.address.state || '') + (data.address.city || data.address.town || data.address.village || '') + (data.address.suburb || data.address.quarter || '');
+      } catch(e) {}
       document.getElementById('msg').textContent = '💾 データベースに記録中...';
-      await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat:pos.coords.latitude, lng:pos.coords.longitude})});
+      await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat: lat, lng: lng, location_name: locName})});
       window.location.href = '/';
     }, () => { alert('位置情報の取得に失敗しました。'); window.location.href='/'; }, {enableHighAccuracy: true});
   </script>
@@ -98,8 +106,8 @@ app.get('/', async (c) => {
 
   const chatHistory = dbChatsRaw.results.reverse();
   const mapPoints = [
-    ...dbCheckinsRaw.results.map(c => ({ type: 'checkin', id: c.id, lat: c.lat, lng: c.lng, time: c.created_at })),
-    ...dbMapNotesRaw.results.map(n => ({ type: 'diary', id: n.id, lat: n.lat, lng: n.lng, time: n.created_at, content: n.content, image: n.image_url }))
+    ...dbCheckinsRaw.results.map(c => ({ type: 'checkin', id: c.id, lat: c.lat, lng: c.lng, locName: c.location_name, time: c.created_at })),
+    ...dbMapNotesRaw.results.map(n => ({ type: 'diary', id: n.id, lat: n.lat, lng: n.lng, locName: n.location_name, time: n.created_at, content: n.content, image: n.image_url }))
   ].sort((a, b) => a.time - b.time);
 
   const googleMapsApiKey = c.env.GOOGLE_MAPS_API_KEY || '';
@@ -258,9 +266,6 @@ app.get('/', async (c) => {
                 "symbols": [
                   { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
                   { "name": "AMEX:VOO", "displayName": "Vanguard S&P 500 ETF" },
-                  { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
-                  { "name": "TSE:9432", "displayName": "NTT" },
-                  { "name": "TSE:4755", "displayName": "楽天グループ" },
                   { "name": "NYSE:KO", "displayName": "Coca-Cola" },
                   { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
                   { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
@@ -334,21 +339,26 @@ app.get('/', async (c) => {
           ` : ''}
         </div>
 
-        <div style="margin-top: 15px; max-height: 200px; overflow-y: auto; display:flex; flex-direction:column; gap:8px;">
+        <div style="margin-top: 15px; max-height: 250px; overflow-y: auto; display:flex; flex-direction:column; gap:8px; padding-right:4px;">
           ${mapPoints.length === 0 ? html`<div style="font-size:0.9rem; color:var(--text-muted); text-align:center; padding:10px;">この日の記録はありません。</div>` : ''}
           ${mapPoints.map(p => {
             const d = new Date(p.time + 9 * 3600000);
             const timeStr = d.getUTCHours() + ':' + String(d.getUTCMinutes()).padStart(2,'0');
+            // 地名データがあれば表示する
+            const locText = p.locName ? `<div style="font-size:0.75rem; color:#3b82f6; margin-top:2px; font-weight:bold;">📍 ${p.locName}</div>` : '';
             return html`
               <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:#f8fafc; border-radius:8px; border:1px solid var(--border); font-size:0.9rem;">
-                <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                <div style="display:flex; align-items:flex-start; gap:8px; overflow:hidden; flex:1;">
                   <span style="font-size:1.2rem;">${p.type === 'checkin' ? '📍' : '📝'}</span>
-                  <b style="min-width:40px;">${timeStr}</b>
-                  <span style="color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                    ${p.type === 'diary' ? p.content : '現在地チェックイン'}
-                  </span>
+                  <b style="min-width:40px; margin-top:2px;">${timeStr}</b>
+                  <div style="display:flex; flex-direction:column; overflow:hidden; flex:1;">
+                    <span style="color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                      ${p.type === 'diary' ? p.content.replace(/\n/g, ' ') : '現在地チェックイン'}
+                    </span>
+                    ${raw(locText)}
+                  </div>
                 </div>
-                <form method="POST" action="${p.type === 'checkin' ? '/api/checkin/delete' : '/diary/delete'}" style="margin:0; flex-shrink:0;" onsubmit="return confirm('この履歴を削除しますか？');">
+                <form method="POST" action="${p.type === 'checkin' ? '/api/checkin/delete' : '/diary/delete'}" style="margin:0; flex-shrink:0; padding-left:10px;" onsubmit="return confirm('この履歴を削除しますか？');">
                   <input type="hidden" name="id" value="${p.id}">
                   <input type="hidden" name="date" value="${targetDate}">
                   <button type="submit" style="background:none; border:none; color:#ef4444; font-size:1.4rem; cursor:pointer; font-weight:bold; padding:0 5px;">×</button>
@@ -370,7 +380,6 @@ app.get('/', async (c) => {
         document.getElementById('koyomi-display').textContent = \`西暦\${now.getFullYear()}年 / 旧暦: \${oldMonths[now.getMonth()]}\`;
       } setInterval(updateClock, 1000); updateClock();
 
-      // ★ここが変わりました: GPSで取得した座標をAPIに投げるように変更
       async function fetchWeatherData(lat, lng, locationName) {
         try {
           const res = await fetch(\`https://api.open-meteo.com/v1/forecast?latitude=\${lat}&longitude=\${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4\`);
@@ -402,11 +411,23 @@ app.get('/', async (c) => {
         }
       }
 
+      async function fetchWeatherWithGeocode(lat, lng) {
+        try {
+          const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);
+          const data = await res.json();
+          let locName = '現在地';
+          if(data.address) locName = data.address.city || data.address.town || data.address.village || data.address.suburb || '現在地';
+          fetchWeatherData(lat, lng, locName);
+        } catch(e) {
+          fetchWeatherData(lat, lng, '現在地');
+        }
+      }
+
       function loadWeather() {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
-            pos => { fetchWeatherData(pos.coords.latitude, pos.coords.longitude, '現在地'); },
-            err => { fetchWeatherData(35.8617, 139.6455, '埼玉'); }, // GPSが拒否された場合は埼玉を表示
+            pos => { fetchWeatherWithGeocode(pos.coords.latitude, pos.coords.longitude); },
+            err => { fetchWeatherData(35.8617, 139.6455, '埼玉'); },
             { enableHighAccuracy: false, timeout: 5000, maximumAge: 600000 }
           );
         } else {
@@ -459,6 +480,7 @@ app.get('/', async (c) => {
         btn.disabled = false; historyDiv.scrollTop = historyDiv.scrollHeight;
       });
 
+      // --- 地図描画 (Google Maps + マーカー吹き出しの地名対応) ---
       const mapPoints = ${raw(JSON.stringify(mapPoints))};
       
       window.initMap = function() {
@@ -485,10 +507,12 @@ app.get('/', async (c) => {
             
             if(p.type === 'diary') {
               iconLabel = "📝";
-              popupHtml = '<b>📝 日記 (' + timeStr + ')</b><br>' + p.content;
+              popupHtml = '<b>📝 日記 (' + timeStr + ')</b><br>' + p.content.replace(/\\n/g, '<br>');
+              if(p.locName) popupHtml += '<br><small style="color:#64748b; font-weight:bold;">📍 ' + p.locName + '</small>';
               if(p.image) popupHtml += '<br><img src="' + p.image + '" style="width:100%; margin-top:5px; border-radius:4px;">';
             } else {
               popupHtml = '<b>📍 チェックイン</b><br>' + timeStr;
+              if(p.locName) popupHtml += '<br><small style="color:#3b82f6; font-weight:bold;">' + p.locName + '</small>';
             }
             const position = { lat: p.lat, lng: p.lng };
             bounds.extend(position);
@@ -514,9 +538,19 @@ app.get('/', async (c) => {
       window.manualCheckin = function() {
         if(!navigator.geolocation) return alert('GPS非対応です');
         const btn = event.target;
-        btn.textContent = "⏳ 記録中..."; btn.disabled = true;
+        btn.textContent = "⏳ 場所を特定中..."; btn.disabled = true;
         navigator.geolocation.getCurrentPosition(async pos => {
-          await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat:pos.coords.latitude, lng:pos.coords.longitude})});
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          let locName = null;
+          try {
+            const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);
+            const data = await res.json();
+            if(data.address) locName = (data.address.province || data.address.state || '') + (data.address.city || data.address.town || data.address.village || '') + (data.address.suburb || data.address.quarter || '');
+          } catch(e) {}
+          
+          btn.textContent = "💾 記録中...";
+          await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat: lat, lng: lng, location_name: locName})});
           location.reload(); 
         }, () => { alert('位置情報の取得に失敗しました'); btn.textContent="📍 今ここを記録する"; btn.disabled=false; }, {enableHighAccuracy: true});
       }
@@ -540,7 +574,7 @@ app.get('/api/ogp', async c => {
   try {
     const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
     const htmlText = await res.text();
-    let title = getMeta(htmlText, 'og:title') || getMeta(htmlText, 'twitter:title') || (htmlText.match(/<title>([^<]+)<\/title>/i)?.[1]) || url;
+    let title = getMeta(htmlText, 'og:title') || getMeta(htmlText, 'twitter:title') || (htmlText.match(/<title>([^<]+)<\\/title>/i)?.[1]) || url;
     let image = getMeta(htmlText, 'og:image') || getMeta(htmlText, 'twitter:image');
     let description = getMeta(htmlText, 'og:description') || getMeta(htmlText, 'description');
     return c.json({ title, image, description });
@@ -549,7 +583,13 @@ app.get('/api/ogp', async c => {
   }
 });
 
-app.post('/api/checkin', async c => { const { lat, lng } = await c.req.json(); await c.env.DB.prepare('INSERT INTO checkins (lat, lng, created_at) VALUES (?, ?, ?)').bind(lat, lng, Date.now()).run(); return c.json({ success: true }); });
+// ★ データベースへの保存時に、送られてきた location_name を保存するように変更
+app.post('/api/checkin', async c => { 
+  const b = await c.req.json(); 
+  const locName = b.location_name || null;
+  await c.env.DB.prepare('INSERT INTO checkins (lat, lng, location_name, created_at) VALUES (?, ?, ?, ?)').bind(b.lat, b.lng, locName, Date.now()).run(); 
+  return c.json({ success: true }); 
+});
 app.post('/api/checkin/delete', async c => { const b = await c.req.parseBody(); await c.env.DB.prepare('DELETE FROM checkins WHERE id = ?').bind(b['id']).run(); return c.redirect('/?date=' + b['date']); });
 
 app.post('/memo/add', async c => { await c.env.DB.prepare('INSERT INTO quick_memo (content) VALUES (?)').bind((await c.req.parseBody())['content']).run(); return c.redirect('/'); });
@@ -591,7 +631,13 @@ app.get('/diary', async c => {
       <div style="max-width:600px; display:flex; flex-direction:column; gap:15px;">
         ${results.map(n => html`
           <div style="background:#fff; padding:15px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:#64748b; font-size:0.9rem;">${new Date(n.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</span><div style="display:flex; gap:10px;"><a href="/diary/edit/${n.id}" style="color:#3b82f6; font-size:0.9rem; text-decoration:none;">編集</a><form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${n.id}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; text-decoration:underline; padding:0;">削除</button></form></div></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+              <span style="color:#64748b; font-size:0.9rem;">
+                ${new Date(n.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
+                ${n.location_name ? html`<span style="color:#3b82f6; margin-left:8px; font-weight:bold;">📍 ${n.location_name}</span>` : ''}
+              </span>
+              <div style="display:flex; gap:10px;"><a href="/diary/edit/${n.id}" style="color:#3b82f6; font-size:0.9rem; text-decoration:none;">編集</a><form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${n.id}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; text-decoration:underline; padding:0;">削除</button></form></div>
+            </div>
             
             <p class="diary-text" style="margin:0; white-space:pre-wrap; line-height:1.5;">${n.content}</p>
             
@@ -648,6 +694,7 @@ app.get('/diary/edit/:id', async c => {
 });
 app.post('/diary/edit/:id', async c => { await c.env.DB.prepare('UPDATE notes SET content = ? WHERE id = ?').bind((await c.req.parseBody())['content'], c.req.param('id')).run(); return c.redirect('/diary'); });
 
+// ★ 日記の投稿時にも、GPSから地名を割り出して保存するように変更
 app.get('/diary/post', c => {
   return c.html(html`
     <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>新規投稿</title></head>
@@ -659,16 +706,33 @@ app.get('/diary/post', c => {
           <textarea name="content" rows="6" placeholder="いまどうしてる？（URLを貼るとリンクカードになります）" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0; font-size:16px;"></textarea>
           <input type="file" name="image" accept="image/*">
           <input type="hidden" name="lat" id="lat"><input type="hidden" name="lng" id="lng">
-          <button type="submit" style="padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold; font-size:16px;">保存する</button>
+          <input type="hidden" name="location_name" id="location_name">
+          <button type="submit" id="submit-btn" style="padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold; font-size:16px;">保存する</button>
         </form>
         <div id="gps-status" style="font-size:0.8rem; color:#64748b; margin-top:15px; font-weight:bold;">📍 位置情報を取得中...</div>
       </div>
       <script>
         if(navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(pos => {
-            document.getElementById('lat').value = pos.coords.latitude;
-            document.getElementById('lng').value = pos.coords.longitude;
-            document.getElementById('gps-status').textContent = '📍 現在の位置情報を写真やメモと一緒に残せます';
+          navigator.geolocation.getCurrentPosition(async pos => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            document.getElementById('lat').value = lat;
+            document.getElementById('lng').value = lng;
+            document.getElementById('gps-status').textContent = '📍 場所の名前を特定中...';
+            try {
+              const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);
+              const data = await res.json();
+              if(data.address) {
+                const locName = (data.address.province || data.address.state || '') + (data.address.city || data.address.town || data.address.village || '') + (data.address.suburb || data.address.quarter || '');
+                if(locName) {
+                   document.getElementById('location_name').value = locName;
+                   document.getElementById('gps-status').innerHTML = '📍 <b>' + locName + '</b> の位置情報を記録します';
+                   document.getElementById('gps-status').style.color = '#3b82f6';
+                   return;
+                }
+              }
+            } catch(e) {}
+            document.getElementById('gps-status').textContent = '📍 現在の位置情報を記録します';
             document.getElementById('gps-status').style.color = '#3b82f6';
           }, () => { document.getElementById('gps-status').textContent = '⚠️ 位置情報が取得できませんでした'; }, {enableHighAccuracy: true});
         }
@@ -676,12 +740,17 @@ app.get('/diary/post', c => {
     </body></html>
   `);
 });
+
 app.post('/diary/post', async c => {
   const b = await c.req.parseBody(); let img = null;
   if (b['image'] instanceof File && b['image'].size > 0) { const fn = `${Date.now()}-${b['image'].name}`; await c.env.BUCKET.put(fn, await b['image'].arrayBuffer(), { httpMetadata: { contentType: b['image'].type } }); img = `/images/${fn}`; }
-  const lat = b['lat'] ? parseFloat(b['lat']) : null; const lng = b['lng'] ? parseFloat(b['lng']) : null;
-  await c.env.DB.prepare('INSERT INTO notes (content, image_url, lat, lng, created_at) VALUES (?, ?, ?, ?, ?)').bind(b['content'], img, lat, lng, Date.now()).run(); return c.redirect('/');
+  const lat = b['lat'] ? parseFloat(b['lat']) : null; 
+  const lng = b['lng'] ? parseFloat(b['lng']) : null;
+  const locName = b['location_name'] || null;
+  await c.env.DB.prepare('INSERT INTO notes (content, image_url, lat, lng, location_name, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(b['content'], img, lat, lng, locName, Date.now()).run(); 
+  return c.redirect('/');
 });
+
 app.get('/images/:key', async c => {
   const obj = await c.env.BUCKET.get(c.req.param('key'));
   if (!obj) return c.text('Not Found', 404);
