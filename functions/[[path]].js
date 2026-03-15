@@ -13,7 +13,7 @@ app.get('/manifest.json', c => c.json({
 app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
 app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
 
-// --- チェックイン画面 (地名取得対応) ---
+// --- チェックイン画面 ---
 app.get('/checkin', c => c.html(`
 <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>Check-in</title></head>
 <body style="background:#f8fafc; color:#0f172a; text-align:center; padding-top:100px; font-family:sans-serif;">
@@ -344,7 +344,6 @@ app.get('/', async (c) => {
           ${mapPoints.map(p => {
             const d = new Date(p.time + 9 * 3600000);
             const timeStr = d.getUTCHours() + ':' + String(d.getUTCMinutes()).padStart(2,'0');
-            // 地名データがあれば表示する
             const locText = p.locName ? `<div style="font-size:0.75rem; color:#3b82f6; margin-top:2px; font-weight:bold;">📍 ${p.locName}</div>` : '';
             return html`
               <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:#f8fafc; border-radius:8px; border:1px solid var(--border); font-size:0.9rem;">
@@ -562,6 +561,7 @@ app.get('/', async (c) => {
 });
 
 // --- API ---
+// ★ 修正箇所：正規表現のバックスラッシュを削除し、正しい構文に直しました！
 const getMeta = (htmlText, prop) => {
   const reg = new RegExp(`<meta(?:\\s+[^>]*?)?(?:property|name)=["']${prop}["']\\s+content=["']([^"']*)["']`, 'i');
   const reg2 = new RegExp(`<meta(?:\\s+[^>]*?)?content=["']([^"']*)["']\\s+(?:property|name)=["']${prop}["']`, 'i');
@@ -574,7 +574,8 @@ app.get('/api/ogp', async c => {
   try {
     const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
     const htmlText = await res.text();
-    let title = getMeta(htmlText, 'og:title') || getMeta(htmlText, 'twitter:title') || (htmlText.match(/<title>([^<]+)<\\/title>/i)?.[1]) || url;
+    // ここがエラーの原因でした
+    let title = getMeta(htmlText, 'og:title') || getMeta(htmlText, 'twitter:title') || (htmlText.match(/<title>([^<]+)<\/title>/i)?.[1]) || url;
     let image = getMeta(htmlText, 'og:image') || getMeta(htmlText, 'twitter:image');
     let description = getMeta(htmlText, 'og:description') || getMeta(htmlText, 'description');
     return c.json({ title, image, description });
@@ -583,7 +584,7 @@ app.get('/api/ogp', async c => {
   }
 });
 
-// ★ データベースへの保存時に、送られてきた location_name を保存するように変更
+// データベースへの保存時
 app.post('/api/checkin', async c => { 
   const b = await c.req.json(); 
   const locName = b.location_name || null;
@@ -694,7 +695,6 @@ app.get('/diary/edit/:id', async c => {
 });
 app.post('/diary/edit/:id', async c => { await c.env.DB.prepare('UPDATE notes SET content = ? WHERE id = ?').bind((await c.req.parseBody())['content'], c.req.param('id')).run(); return c.redirect('/diary'); });
 
-// ★ 日記の投稿時にも、GPSから地名を割り出して保存するように変更
 app.get('/diary/post', c => {
   return c.html(html`
     <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>新規投稿</title></head>
