@@ -88,7 +88,7 @@ app.get('/', async (c) => {
 
   const [news, dbNotes, dbTodos, dbChatsRaw, dbMemos, dbCheckinsRaw, dbMapNotesRaw] = await Promise.all([
     fetchNews(),
-    c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 10').all(), // 少し多めに取得
+    c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 10').all(),
     c.env.DB.prepare('SELECT * FROM todos ORDER BY is_completed ASC, created_at DESC').all(),
     c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 30').all(),
     c.env.DB.prepare('SELECT * FROM quick_memo ORDER BY id DESC').all(),
@@ -168,7 +168,7 @@ app.get('/', async (c) => {
     #image-preview { max-height: 80px; border-radius: 8px; border: 1px solid var(--border); }
     #clear-image { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; }
     
-    /* === 新しくなったDiaryの横長リストスタイル === */
+    /* === Diaryの横長リストスタイル === */
     .diary-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 350px; padding-right: 4px; }
     .diary-list-item { display: flex; gap: 12px; align-items: center; padding: 10px; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; transition: 0.2s; }
     .diary-list-item:hover { background: #f1f5f9; border-color: #cbd5e1; }
@@ -195,7 +195,7 @@ app.get('/', async (c) => {
       </div>
 
       <div class="card col-span-1">
-        <div class="card-header"><span class="card-icon">⛅</span> 天気予報 (埼玉)</div>
+        <div class="card-header"><span class="card-icon">⛅</span> <span id="weather-title">天気予報 (現在地を特定中...)</span></div>
         <div id="weather-widget" style="display:flex; flex-direction:column; gap:10px;"><div style="text-align:center; padding: 20px; color:var(--text-muted);">読込中...</div></div>
       </div>
 
@@ -258,6 +258,9 @@ app.get('/', async (c) => {
                 "symbols": [
                   { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
                   { "name": "AMEX:VOO", "displayName": "Vanguard S&P 500 ETF" },
+                  { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
+                  { "name": "TSE:9432", "displayName": "NTT" },
+                  { "name": "TSE:4755", "displayName": "楽天グループ" },
                   { "name": "NYSE:KO", "displayName": "Coca-Cola" },
                   { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
                   { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
@@ -298,7 +301,6 @@ app.get('/', async (c) => {
           ${dbNotes.results.map(note => {
             const dDate = new Date(note.created_at + 9 * 3600000);
             const dateStr = dDate.getUTCFullYear() + '-' + String(dDate.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dDate.getUTCDate()).padStart(2, '0') + ' ' + String(dDate.getUTCHours()).padStart(2, '0') + ':' + String(dDate.getUTCMinutes()).padStart(2, '0');
-            // 改行を取り除いて一行でスッキリ見せる
             const shortText = note.content.replace(/\n/g, ' ');
             return html`
               <a href="/diary" class="diary-list-item">
@@ -368,9 +370,10 @@ app.get('/', async (c) => {
         document.getElementById('koyomi-display').textContent = \`西暦\${now.getFullYear()}年 / 旧暦: \${oldMonths[now.getMonth()]}\`;
       } setInterval(updateClock, 1000); updateClock();
 
-      async function loadWeather() {
+      // ★ここが変わりました: GPSで取得した座標をAPIに投げるように変更
+      async function fetchWeatherData(lat, lng, locationName) {
         try {
-          const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=35.8617&longitude=139.6455&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4');
+          const res = await fetch(\`https://api.open-meteo.com/v1/forecast?latitude=\${lat}&longitude=\${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4\`);
           const data = await res.json();
           const getIcon = c => (c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');
           const d = data.daily;
@@ -392,8 +395,25 @@ app.get('/', async (c) => {
             </div>\`;
           }
           document.getElementById('weather-widget').innerHTML = html + '</div></div>';
-        } catch (e) { document.getElementById('weather-widget').innerHTML = '取得失敗'; }
-      } loadWeather();
+          document.getElementById('weather-title').textContent = \`天気予報 (\${locationName})\`;
+        } catch (e) { 
+          document.getElementById('weather-widget').innerHTML = '取得失敗'; 
+          document.getElementById('weather-title').textContent = '天気予報 (エラー)';
+        }
+      }
+
+      function loadWeather() {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            pos => { fetchWeatherData(pos.coords.latitude, pos.coords.longitude, '現在地'); },
+            err => { fetchWeatherData(35.8617, 139.6455, '埼玉'); }, // GPSが拒否された場合は埼玉を表示
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 600000 }
+          );
+        } else {
+          fetchWeatherData(35.8617, 139.6455, '埼玉');
+        }
+      }
+      loadWeather();
 
       const tabBtns = document.querySelectorAll('.tab-btn');
       const newsLists = document.querySelectorAll('.news-list');
