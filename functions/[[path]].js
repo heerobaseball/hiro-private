@@ -132,6 +132,7 @@ app.get('/', async (c) => {
     .navbar { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 0.8rem 1.5rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
     .nav-brand { font-size: 1.2rem; font-weight: 900; }
     .nav-links { display: flex; gap: 15px; } .nav-links a { font-weight: 600; color: var(--text-muted); }
+    .nav-links a.active { color: var(--primary); }
     .container { max-width: 1400px; margin: 1rem auto 3rem; padding: 0 1rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
     .card { background: var(--card-bg); border-radius: var(--radius); padding: 1.2rem; border: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
     .card-header { font-size: 1.1rem; font-weight: 800; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px; }
@@ -176,7 +177,6 @@ app.get('/', async (c) => {
     #image-preview { max-height: 80px; border-radius: 8px; border: 1px solid var(--border); }
     #clear-image { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; }
     
-    /* === Diaryの横長リストスタイル === */
     .diary-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 350px; padding-right: 4px; }
     .diary-list-item { display: flex; gap: 12px; align-items: center; padding: 10px; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; transition: 0.2s; }
     .diary-list-item:hover { background: #f1f5f9; border-color: #cbd5e1; }
@@ -190,7 +190,7 @@ app.get('/', async (c) => {
   </style>
 </head>
 <body>
-  <header class="navbar"><div class="nav-brand">My Dashboard</div><div class="nav-links"><a href="/" class="active">Home</a><a href="/diary">Diary</a></div></header>
+  <header class="navbar"><div class="nav-brand">My Dashboard</div><div class="nav-links"><a href="/" class="active">Home</a><a href="/diary">Diary</a><a href="/image-optimizer">Optimizer</a></div></header>
   <main>
     <div class="container">
       
@@ -479,7 +479,6 @@ app.get('/', async (c) => {
         btn.disabled = false; historyDiv.scrollTop = historyDiv.scrollHeight;
       });
 
-      // --- 地図描画 (Google Maps + マーカー吹き出しの地名対応) ---
       const mapPoints = ${raw(JSON.stringify(mapPoints))};
       
       window.initMap = function() {
@@ -560,8 +559,128 @@ app.get('/', async (c) => {
   `);
 });
 
+// --- 新機能: 画像オプティマイザー (WebP変換ツール) ---
+app.get('/image-optimizer', c => {
+  return c.html(html`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+      <meta name="theme-color" content="#3b82f6">
+      <title>Image Optimizer - My Dashboard</title>
+      <style>
+        :root { --bg: #f8fafc; --card-bg: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --border: #e2e8f0; --primary: #3b82f6; --primary-light: #eff6ff; --button-dark: #1e293b; --radius: 16px; }
+        body { margin: 0; background: var(--bg); color: var(--text-main); font-family: -apple-system, sans-serif; }
+        a { text-decoration: none; color: inherit; }
+        .navbar { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 0.8rem 1.5rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .nav-brand { font-size: 1.2rem; font-weight: 900; }
+        .nav-links { display: flex; gap: 15px; } .nav-links a { font-weight: 600; color: var(--text-muted); }
+        .nav-links a.active { color: var(--primary); }
+        .container { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .drop-zone { border: 2px dashed var(--primary); border-radius: var(--radius); padding: 40px 20px; text-align: center; cursor: pointer; transition: 0.2s; background: var(--primary-light); color: var(--primary); font-weight: bold; }
+        .drop-zone.dragover { background: #dbeafe; border-color: #2563eb; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px; margin-top: 20px; }
+        .thumb-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .thumb-img { width: 100%; height: 120px; object-fit: contain; border-radius: 4px; margin-bottom: 10px; background: #f1f5f9; }
+        .dl-btn { display: block; padding: 8px; background: var(--button-dark); color: white; border-radius: 6px; font-weight: bold; font-size: 14px; margin-top: 5px; transition: 0.2s; }
+        .dl-btn:hover { opacity: 0.9; }
+      </style>
+    </head>
+    <body>
+      <header class="navbar">
+        <div class="nav-brand">My Dashboard</div>
+        <div class="nav-links">
+          <a href="/">Home</a>
+          <a href="/diary">Diary</a>
+          <a href="/image-optimizer" class="active">Optimizer</a>
+        </div>
+      </header>
+      
+      <div class="container">
+        <h2 style="margin-top:0;">🖼️ 画像最適化ツール (WebP変換)</h2>
+        <p style="color:var(--text-muted); font-size:0.9rem; line-height:1.5;">
+          デバイス上で画像を直接圧縮・最適化します。<br>データはサーバーに送信されないため、安全かつ一瞬で処理が完了します。
+        </p>
+        
+        <div id="drop-zone" class="drop-zone">
+          📥 ここに画像をドロップ<br><br>またはタップしてファイルを選択 (複数可)
+          <input type="file" id="file-input" multiple accept="image/*" style="display:none;">
+        </div>
+        
+        <div id="gallery" class="gallery"></div>
+      </div>
+
+      <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const gallery = document.getElementById('gallery');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => {
+          e.preventDefault(); dropZone.classList.remove('dragover');
+          handleFiles(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+          for (const file of files) {
+            if (!file.type.startsWith('image/')) continue;
+            processImage(file);
+          }
+        }
+
+        function processImage(file) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let width = img.width;
+              let height = img.height;
+              const MAX_SIZE = 1920; // 画面サイズに合わせて最大1920pxにリサイズ
+              
+              if (width > height && width > MAX_SIZE) {
+                height *= MAX_SIZE / width; width = MAX_SIZE;
+              } else if (height > MAX_SIZE) {
+                width *= MAX_SIZE / height; height = MAX_SIZE;
+              }
+              
+              canvas.width = width; canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, width, height);
+
+              // 0.8の品質でWebP形式に圧縮
+              canvas.toBlob((blob) => {
+                const originalSize = (file.size / 1024).toFixed(1) + ' KB';
+                const newSize = (blob.size / 1024).toFixed(1) + ' KB';
+                const url = URL.createObjectURL(blob);
+                
+                const card = document.createElement('div');
+                card.className = 'thumb-card';
+                card.innerHTML = \`
+                  <img src="\${url}" class="thumb-img">
+                  <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${file.name}</div>
+                  <div style="font-size:11px; color:#ef4444; text-decoration:line-through;">\${originalSize}</div>
+                  <div style="font-size:14px; color:#10b981; font-weight:bold;">\${newSize}</div>
+                  <a href="\${url}" download="opt_\${file.name.split('.')[0]}.webp" class="dl-btn">⬇️ ダウンロード</a>
+                \`;
+                gallery.prepend(card);
+              }, 'image/webp', 0.8);
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        }
+      </script>
+    </body>
+    </html>
+  `);
+});
+
 // --- API ---
-// ★ 修正箇所：正規表現のバックスラッシュを削除し、正しい構文に直しました！
 const getMeta = (htmlText, prop) => {
   const reg = new RegExp(`<meta(?:\\s+[^>]*?)?(?:property|name)=["']${prop}["']\\s+content=["']([^"']*)["']`, 'i');
   const reg2 = new RegExp(`<meta(?:\\s+[^>]*?)?content=["']([^"']*)["']\\s+(?:property|name)=["']${prop}["']`, 'i');
@@ -574,7 +693,6 @@ app.get('/api/ogp', async c => {
   try {
     const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
     const htmlText = await res.text();
-    // ここがエラーの原因でした
     let title = getMeta(htmlText, 'og:title') || getMeta(htmlText, 'twitter:title') || (htmlText.match(/<title>([^<]+)<\/title>/i)?.[1]) || url;
     let image = getMeta(htmlText, 'og:image') || getMeta(htmlText, 'twitter:image');
     let description = getMeta(htmlText, 'og:description') || getMeta(htmlText, 'description');
@@ -584,7 +702,6 @@ app.get('/api/ogp', async c => {
   }
 });
 
-// データベースへの保存時
 app.post('/api/checkin', async c => { 
   const b = await c.req.json(); 
   const locName = b.location_name || null;
@@ -627,9 +744,18 @@ app.get('/diary', async c => {
   const { results } = await c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC').all();
   return c.html(html`
     <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>日記一覧</title></head>
-    <body style="font-family:sans-serif; background:#f8fafc; margin:0; padding:20px;">
-      <a href="/" style="color:#3b82f6; text-decoration:none; font-weight:bold;">← ホームへ戻る</a><h2 style="color:#0f172a;">全ての記録</h2>
-      <div style="max-width:600px; display:flex; flex-direction:column; gap:15px;">
+    <body style="font-family:sans-serif; background:#f8fafc; margin:0; padding:0;">
+      <header class="navbar" style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; padding: 0.8rem 1.5rem; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+        <div class="nav-brand" style="font-size: 1.2rem; font-weight: 900;">My Dashboard</div>
+        <div class="nav-links" style="display: flex; gap: 15px;">
+          <a href="/" style="font-weight: 600; color: #64748b; text-decoration: none;">Home</a>
+          <a href="/diary" style="font-weight: 600; color: #3b82f6; text-decoration: none;">Diary</a>
+          <a href="/image-optimizer" style="font-weight: 600; color: #64748b; text-decoration: none;">Optimizer</a>
+        </div>
+      </header>
+
+      <div style="max-width:600px; margin: 20px auto; padding: 0 15px; display:flex; flex-direction:column; gap:15px;">
+        <h2 style="color:#0f172a; margin-top:0;">全ての記録</h2>
         ${results.map(n => html`
           <div style="background:#fff; padding:15px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
             <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
@@ -639,9 +765,7 @@ app.get('/diary', async c => {
               </span>
               <div style="display:flex; gap:10px;"><a href="/diary/edit/${n.id}" style="color:#3b82f6; font-size:0.9rem; text-decoration:none;">編集</a><form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${n.id}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; text-decoration:underline; padding:0;">削除</button></form></div>
             </div>
-            
             <p class="diary-text" style="margin:0; white-space:pre-wrap; line-height:1.5;">${n.content}</p>
-            
             ${n.image_url ? html`<img src="${n.image_url}" style="margin-top:10px; border-radius:8px; max-width:100%;">` : ''}
           </div>
         `)}
