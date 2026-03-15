@@ -559,7 +559,7 @@ app.get('/', async (c) => {
   `);
 });
 
-// --- 新機能: 画像オプティマイザー (WebP変換ツール) ---
+// --- 新機能: 画像オプティマイザー (補正機能つき) ---
 app.get('/image-optimizer', c => {
   return c.html(html`
     <!DOCTYPE html>
@@ -585,6 +585,10 @@ app.get('/image-optimizer', c => {
         .thumb-img { width: 100%; height: 120px; object-fit: contain; border-radius: 4px; margin-bottom: 10px; background: #f1f5f9; }
         .dl-btn { display: block; padding: 8px; background: var(--button-dark); color: white; border-radius: 6px; font-weight: bold; font-size: 14px; margin-top: 5px; transition: 0.2s; }
         .dl-btn:hover { opacity: 0.9; }
+        .options { display: flex; gap: 15px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .opt-label { cursor: pointer; background: #fff; padding: 10px 15px; border-radius: 8px; border: 1px solid var(--border); font-weight: bold; font-size: 0.9rem; user-select: none; transition: 0.2s; }
+        .opt-label:hover { background: #f1f5f9; }
+        input[type="checkbox"] { transform: scale(1.2); margin-right: 8px; }
       </style>
     </head>
     <body>
@@ -598,10 +602,19 @@ app.get('/image-optimizer', c => {
       </header>
       
       <div class="container">
-        <h2 style="margin-top:0;">🖼️ 画像最適化ツール (WebP変換)</h2>
-        <p style="color:var(--text-muted); font-size:0.9rem; line-height:1.5;">
-          デバイス上で画像を直接圧縮・最適化します。<br>データはサーバーに送信されないため、安全かつ一瞬で処理が完了します。
+        <h2 style="margin-top:0; text-align:center;">🖼️ 画像最適化＆補正ツール</h2>
+        <p style="color:var(--text-muted); font-size:0.9rem; line-height:1.5; text-align:center; margin-bottom:20px;">
+          ブラウザの演算機能を使って一瞬で画像を補正・圧縮します。<br>好みのスイッチを入れてから、画像をドロップしてください。
         </p>
+
+        <div class="options">
+          <label class="opt-label" title="暗い写真を明るく鮮やかにします">
+            <input type="checkbox" id="opt-bright"> ☀️ 明るく鮮やかに補正
+          </label>
+          <label class="opt-label" title="ボヤけた境界線を計算して輪郭を際立たせます">
+            <input type="checkbox" id="opt-sharp"> 🔲 クッキリ補正 (シャープネス)
+          </label>
+        </div>
         
         <div id="drop-zone" class="drop-zone">
           📥 ここに画像をドロップ<br><br>またはタップしてファイルを選択 (複数可)
@@ -615,6 +628,8 @@ app.get('/image-optimizer', c => {
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
         const gallery = document.getElementById('gallery');
+        const chkBright = document.getElementById('opt-bright');
+        const chkSharp = document.getElementById('opt-sharp');
 
         dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -626,13 +641,16 @@ app.get('/image-optimizer', c => {
         fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
         function handleFiles(files) {
+          const doBright = chkBright.checked;
+          const doSharp = chkSharp.checked;
           for (const file of files) {
             if (!file.type.startsWith('image/')) continue;
-            processImage(file);
+            processImage(file, doBright, doSharp);
           }
+          fileInput.value = ''; // リセット
         }
 
-        function processImage(file) {
+        function processImage(file, doBright, doSharp) {
           const reader = new FileReader();
           reader.onload = (e) => {
             const img = new Image();
@@ -640,7 +658,7 @@ app.get('/image-optimizer', c => {
               const canvas = document.createElement('canvas');
               let width = img.width;
               let height = img.height;
-              const MAX_SIZE = 1920; // 画面サイズに合わせて最大1920pxにリサイズ
+              const MAX_SIZE = 1920; 
               
               if (width > height && width > MAX_SIZE) {
                 height *= MAX_SIZE / width; width = MAX_SIZE;
@@ -648,27 +666,63 @@ app.get('/image-optimizer', c => {
                 width *= MAX_SIZE / height; height = MAX_SIZE;
               }
               
+              width = Math.floor(width);
+              height = Math.floor(height);
               canvas.width = width; canvas.height = height;
               const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, width, height);
 
-              // 0.8の品質でWebP形式に圧縮
+              // 1. 明るさ・コントラスト補正 (Canvas Filter)
+              if (doBright) {
+                ctx.filter = 'brightness(130%) contrast(115%) saturate(110%)';
+              }
+              
+              ctx.drawImage(img, 0, 0, width, height);
+              ctx.filter = 'none'; // リセット
+
+              // 2. シャープネス補正 (コンボリューション行列計算)
+              if (doSharp) {
+                const imgData = ctx.getImageData(0, 0, width, height);
+                const data = imgData.data;
+                const copy = new Uint8ClampedArray(data); // 元データをコピー
+                
+                // 3x3の単純なアンシャープマスク行列 [0, -1, 0, -1, 5, -1, 0, -1, 0]
+                for(let y = 1; y < height - 1; y++) {
+                  for(let x = 1; x < width - 1; x++) {
+                    const i = (y * width + x) * 4;
+                    for(let c = 0; c < 3; c++) { // R, G, Bのみ (Alphaは無視)
+                      const val = 5 * copy[i+c] 
+                                - copy[i - 4 + c] 
+                                - copy[i + 4 + c] 
+                                - copy[(y - 1) * width * 4 + x * 4 + c] 
+                                - copy[(y + 1) * width * 4 + x * 4 + c];
+                      data[i+c] = val; // Uint8ClampedArray なので自動的に0〜255に収まります
+                    }
+                  }
+                }
+                ctx.putImageData(imgData, 0, 0);
+              }
+
+              // WebPで圧縮して出力
               canvas.toBlob((blob) => {
                 const originalSize = (file.size / 1024).toFixed(1) + ' KB';
                 const newSize = (blob.size / 1024).toFixed(1) + ' KB';
                 const url = URL.createObjectURL(blob);
                 
+                let badgeStr = "";
+                if(doBright) badgeStr += "☀️";
+                if(doSharp) badgeStr += "🔲";
+                
                 const card = document.createElement('div');
                 card.className = 'thumb-card';
                 card.innerHTML = \`
                   <img src="\${url}" class="thumb-img">
-                  <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${file.name}</div>
+                  <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${badgeStr} \${file.name}</div>
                   <div style="font-size:11px; color:#ef4444; text-decoration:line-through;">\${originalSize}</div>
                   <div style="font-size:14px; color:#10b981; font-weight:bold;">\${newSize}</div>
                   <a href="\${url}" download="opt_\${file.name.split('.')[0]}.webp" class="dl-btn">⬇️ ダウンロード</a>
                 \`;
                 gallery.prepend(card);
-              }, 'image/webp', 0.8);
+              }, 'image/webp', 0.85);
             };
             img.src = e.target.result;
           };
