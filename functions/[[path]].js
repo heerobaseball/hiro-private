@@ -88,7 +88,7 @@ app.get('/', async (c) => {
 
   const [news, dbNotes, dbTodos, dbChatsRaw, dbMemos, dbCheckinsRaw, dbMapNotesRaw] = await Promise.all([
     fetchNews(),
-    c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 6').all(),
+    c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 10').all(), // 少し多めに取得
     c.env.DB.prepare('SELECT * FROM todos ORDER BY is_completed ASC, created_at DESC').all(),
     c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 30').all(),
     c.env.DB.prepare('SELECT * FROM quick_memo ORDER BY id DESC').all(),
@@ -167,11 +167,18 @@ app.get('/', async (c) => {
     #image-preview-container { display: none; margin-bottom: 8px; position: relative; width: fit-content; }
     #image-preview { max-height: 80px; border-radius: 8px; border: 1px solid var(--border); }
     #clear-image { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; }
-    .diary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
-    .diary-card { position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 1/1; background: var(--border); }
-    .diary-card img { width: 100%; height: 100%; object-fit: cover; }
-    .diary-card .overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: white; padding: 8px; font-size: 12px; font-weight: bold; }
-    .diary-card.no-image { background: var(--bg); padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--border); }
+    
+    /* === 新しくなったDiaryの横長リストスタイル === */
+    .diary-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 350px; padding-right: 4px; }
+    .diary-list-item { display: flex; gap: 12px; align-items: center; padding: 10px; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; transition: 0.2s; }
+    .diary-list-item:hover { background: #f1f5f9; border-color: #cbd5e1; }
+    .diary-list-thumb { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
+    .diary-list-thumb.no-img { background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+    .diary-list-info { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; gap: 4px; }
+    .diary-list-date { font-size: 0.75rem; color: #3b82f6; font-weight: bold; }
+    .diary-list-text { font-size: 0.95rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .leaflet-control-attribution { font-size: 10px !important; }
   </style>
 </head>
 <body>
@@ -251,6 +258,9 @@ app.get('/', async (c) => {
                 "symbols": [
                   { "name": "FOREXCOM:SPXUSD", "displayName": "S&P 500" },
                   { "name": "AMEX:VOO", "displayName": "Vanguard S&P 500 ETF" },
+                  { "name": "TVC:TOPIX", "displayName": "東証株価指数" },
+                  { "name": "TSE:9432", "displayName": "NTT" },
+                  { "name": "TSE:4755", "displayName": "楽天グループ" },
                   { "name": "NYSE:KO", "displayName": "Coca-Cola" },
                   { "name": "FX_IDC:USDJPY", "displayName": "USD/JPY" },
                   { "name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD" },
@@ -286,12 +296,22 @@ app.get('/', async (c) => {
         <div class="card-header chat-header-flex">
           <div><span class="card-icon">📸</span> Diary</div><a href="/diary/post" style="font-size:14px; color:var(--primary); font-weight:bold;">＋ 投稿</a>
         </div>
-        <div class="diary-grid">
+        <div class="diary-list">
+          ${dbNotes.results.length === 0 ? html`<div style="color:var(--text-muted); text-align:center; padding:20px;">まだ記録がありません</div>` : ''}
           ${dbNotes.results.map(note => {
             const dDate = new Date(note.created_at + 9 * 3600000);
-            const dateStr = dDate.getUTCFullYear() + '-' + String(dDate.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dDate.getUTCDate()).padStart(2, '0');
-            if (note.image_url) { return html`<a href="/diary" class="diary-card"><img src="${note.image_url}" loading="lazy"><div class="overlay"><div>${dateStr}</div></div></a>`; }
-            else { return html`<a href="/diary" class="diary-card no-image"><div style="font-size:12px; color:var(--text-main);">${note.content.substring(0, 30)}...</div><div class="overlay">${dateStr}</div></a>`; }
+            const dateStr = dDate.getUTCFullYear() + '-' + String(dDate.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dDate.getUTCDate()).padStart(2, '0') + ' ' + String(dDate.getUTCHours()).padStart(2, '0') + ':' + String(dDate.getUTCMinutes()).padStart(2, '0');
+            // 改行を取り除いて一行でスッキリ見せる
+            const shortText = note.content.replace(/\n/g, ' ');
+            return html`
+              <a href="/diary" class="diary-list-item">
+                ${note.image_url ? html`<img src="${note.image_url}" class="diary-list-thumb" loading="lazy">` : html`<div class="diary-list-thumb no-img">📝</div>`}
+                <div class="diary-list-info">
+                  <div class="diary-list-date">${dateStr}</div>
+                  <div class="diary-list-text">${shortText}</div>
+                </div>
+              </a>
+            `;
           })}
         </div>
       </div>
@@ -422,7 +442,6 @@ app.get('/', async (c) => {
         btn.disabled = false; historyDiv.scrollTop = historyDiv.scrollHeight;
       });
 
-      // --- 地図描画 (Google Maps) ---
       const mapPoints = ${raw(JSON.stringify(mapPoints))};
       
       window.initMap = function() {
@@ -492,7 +511,6 @@ app.get('/', async (c) => {
 });
 
 // --- API ---
-// ★ 修正箇所：正規表現のバックスラッシュを1つ減らしました
 const getMeta = (htmlText, prop) => {
   const reg = new RegExp(`<meta(?:\\s+[^>]*?)?(?:property|name)=["']${prop}["']\\s+content=["']([^"']*)["']`, 'i');
   const reg2 = new RegExp(`<meta(?:\\s+[^>]*?)?content=["']([^"']*)["']\\s+(?:property|name)=["']${prop}["']`, 'i');
@@ -569,36 +587,26 @@ app.get('/diary', async c => {
         document.querySelectorAll('.diary-text').forEach(el => {
           const text = el.textContent;
           const urlRegex = /(https?:\\/\\/[^\\s]+)/g;
-          
           if (urlRegex.test(text)) {
             el.innerHTML = text.replace(urlRegex, '<a href="$1" class="auto-link" target="_blank" style="color:#3b82f6; word-break:break-all;">$1</a>');
-            
             el.querySelectorAll('.auto-link').forEach(async a => {
               const url = a.href;
               const card = document.createElement('a');
-              card.href = url;
-              card.target = "_blank";
+              card.href = url; card.target = "_blank";
               card.style.cssText = "display:flex; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; margin-top:10px; text-decoration:none; color:#0f172a; background:#f8fafc; height:80px; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:0.2s;";
               card.innerHTML = '<div style="padding:10px; font-size:0.8rem; color:#64748b;">🔗 リンク情報を読み込み中...</div>';
-              
               a.parentNode.insertBefore(card, a.nextSibling);
-
               try {
                 const res = await fetch('/api/ogp?url=' + encodeURIComponent(url));
                 const ogp = await res.json();
-                
                 if (ogp.title) {
                   card.innerHTML = (ogp.image ? '<img src="' + ogp.image + '" style="width:80px; height:100%; object-fit:cover; border-right:1px solid #e2e8f0;">' : '<div style="width:80px; height:100%; background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:24px;">🔗</div>') + 
                     '<div style="padding:8px 10px; display:flex; flex-direction:column; justify-content:center; flex:1; overflow:hidden;">' +
                       '<div style="font-weight:bold; font-size:0.85rem; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">' + ogp.title + '</div>' +
                       '<div style="font-size:0.75rem; color:#64748b; margin-top:4px; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;">' + (ogp.description || new URL(url).hostname) + '</div>' +
                     '</div>';
-                } else {
-                  card.remove();
-                }
-              } catch(e) {
-                card.remove();
-              }
+                } else { card.remove(); }
+              } catch(e) { card.remove(); }
             });
           }
         });
