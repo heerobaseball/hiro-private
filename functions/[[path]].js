@@ -195,7 +195,6 @@ app.get('/', async (c) => {
     <div class="nav-links">
       <a href="/" class="active">Home</a>
       <a href="/diary">Diary</a>
-      <a href="/image-optimizer">Opt</a>
       <a href="/chat">Chat</a>
     </div>
   </header>
@@ -567,179 +566,15 @@ app.get('/', async (c) => {
   `);
 });
 
-// --- 画像オプティマイザー ---
-app.get('/image-optimizer', c => {
-  return c.html(html`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-      <meta name="theme-color" content="#3b82f6">
-      <title>Image Optimizer - My Dashboard</title>
-      <style>
-        :root { --bg: #f8fafc; --card-bg: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --border: #e2e8f0; --primary: #3b82f6; --primary-light: #eff6ff; --button-dark: #1e293b; --radius: 16px; }
-        body { margin: 0; background: var(--bg); color: var(--text-main); font-family: -apple-system, sans-serif; }
-        a { text-decoration: none; color: inherit; }
-        .navbar { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 0.8rem 1.5rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-        .nav-brand { font-size: 1.2rem; font-weight: 900; }
-        .nav-links { display: flex; gap: 15px; } .nav-links a { font-weight: 600; color: var(--text-muted); }
-        .nav-links a.active { color: var(--primary); }
-        .container { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-        .drop-zone { border: 2px dashed var(--primary); border-radius: var(--radius); padding: 40px 20px; text-align: center; cursor: pointer; transition: 0.2s; background: var(--primary-light); color: var(--primary); font-weight: bold; }
-        .drop-zone.dragover { background: #dbeafe; border-color: #2563eb; }
-        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px; margin-top: 20px; }
-        .thumb-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        .thumb-img { width: 100%; height: 120px; object-fit: contain; border-radius: 4px; margin-bottom: 10px; background: #f1f5f9; }
-        .dl-btn { display: block; padding: 8px; background: var(--button-dark); color: white; border-radius: 6px; font-weight: bold; font-size: 14px; margin-top: 5px; transition: 0.2s; }
-        .dl-btn:hover { opacity: 0.9; }
-        .options { display: flex; gap: 15px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
-        .opt-label { cursor: pointer; background: #fff; padding: 10px 15px; border-radius: 8px; border: 1px solid var(--border); font-weight: bold; font-size: 0.9rem; user-select: none; transition: 0.2s; }
-        .opt-label:hover { background: #f1f5f9; }
-        input[type="checkbox"] { transform: scale(1.2); margin-right: 8px; }
-      </style>
-    </head>
-    <body>
-      <header class="navbar">
-        <div class="nav-brand">My Dashboard</div>
-        <div class="nav-links">
-          <a href="/">Home</a>
-          <a href="/diary">Diary</a>
-          <a href="/image-optimizer" class="active">Opt</a>
-          <a href="/chat">Chat</a>
-        </div>
-      </header>
-      
-      <div class="container">
-        <h2 style="margin-top:0; text-align:center;">🖼️ 画像最適化＆補正ツール</h2>
-        <p style="color:var(--text-muted); font-size:0.9rem; line-height:1.5; text-align:center; margin-bottom:20px;">
-          ブラウザの演算機能を使って一瞬で画像を補正・圧縮します。<br>好みのスイッチを入れてから、画像をドロップしてください。
-        </p>
+// --- プライベートチャット (Firebase Realtime DB + D1過去ログ自動アーカイブ) ---
+app.get('/chat', async c => {
+  // 1. まず、365日以上前の古い過去ログを D1 (Cloudflare) から自動で削除する
+  const oneYearAgo = Date.now() - (365 * 24 * 60 * 60 * 1000);
+  await c.env.DB.prepare('DELETE FROM private_chats WHERE timestamp < ?').bind(oneYearAgo).run();
 
-        <div class="options">
-          <label class="opt-label" title="暗い写真を明るく鮮やかにします">
-            <input type="checkbox" id="opt-bright"> ☀️ 明るく鮮やかに補正
-          </label>
-          <label class="opt-label" title="ボヤけた境界線を計算して輪郭を際立たせます">
-            <input type="checkbox" id="opt-sharp"> 🔲 クッキリ補正 (シャープネス)
-          </label>
-        </div>
-        
-        <div id="drop-zone" class="drop-zone">
-          📥 ここに画像をドロップ<br><br>またはタップしてファイルを選択 (複数可)
-          <input type="file" id="file-input" multiple accept="image/*" style="display:none;">
-        </div>
-        
-        <div id="gallery" class="gallery"></div>
-      </div>
+  // 2. D1 (Cloudflare) に保存されている過去ログ(直近200件)を取得して画面に渡す
+  const archived = await c.env.DB.prepare('SELECT * FROM private_chats ORDER BY timestamp ASC LIMIT 200').all();
 
-      <script>
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('file-input');
-        const gallery = document.getElementById('gallery');
-        const chkBright = document.getElementById('opt-bright');
-        const chkSharp = document.getElementById('opt-sharp');
-
-        dropZone.addEventListener('click', () => fileInput.click());
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-        dropZone.addEventListener('drop', (e) => {
-          e.preventDefault(); dropZone.classList.remove('dragover');
-          handleFiles(e.dataTransfer.files);
-        });
-        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-
-        function handleFiles(files) {
-          const doBright = chkBright.checked;
-          const doSharp = chkSharp.checked;
-          for (const file of files) {
-            if (!file.type.startsWith('image/')) continue;
-            processImage(file, doBright, doSharp);
-          }
-          fileInput.value = '';
-        }
-
-        function processImage(file, doBright, doSharp) {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-              const canvas = document.createElement('canvas');
-              let width = img.width;
-              let height = img.height;
-              const MAX_SIZE = 1920; 
-              
-              if (width > height && width > MAX_SIZE) {
-                height *= MAX_SIZE / width; width = MAX_SIZE;
-              } else if (height > MAX_SIZE) {
-                width *= MAX_SIZE / height; height = MAX_SIZE;
-              }
-              
-              width = Math.floor(width);
-              height = Math.floor(height);
-              canvas.width = width; canvas.height = height;
-              const ctx = canvas.getContext('2d');
-
-              if (doBright) {
-                ctx.filter = 'brightness(130%) contrast(115%) saturate(110%)';
-              }
-              
-              ctx.drawImage(img, 0, 0, width, height);
-              ctx.filter = 'none';
-
-              if (doSharp) {
-                const imgData = ctx.getImageData(0, 0, width, height);
-                const data = imgData.data;
-                const copy = new Uint8ClampedArray(data);
-                for(let y = 1; y < height - 1; y++) {
-                  for(let x = 1; x < width - 1; x++) {
-                    const i = (y * width + x) * 4;
-                    for(let c = 0; c < 3; c++) {
-                      const val = 5 * copy[i+c] 
-                                - copy[i - 4 + c] 
-                                - copy[i + 4 + c] 
-                                - copy[(y - 1) * width * 4 + x * 4 + c] 
-                                - copy[(y + 1) * width * 4 + x * 4 + c];
-                      data[i+c] = val; 
-                    }
-                  }
-                }
-                ctx.putImageData(imgData, 0, 0);
-              }
-
-              canvas.toBlob((blob) => {
-                const originalSize = (file.size / 1024).toFixed(1) + ' KB';
-                const newSize = (blob.size / 1024).toFixed(1) + ' KB';
-                const url = URL.createObjectURL(blob);
-                
-                let badgeStr = "";
-                if(doBright) badgeStr += "☀️";
-                if(doSharp) badgeStr += "🔲";
-                
-                const card = document.createElement('div');
-                card.className = 'thumb-card';
-                card.innerHTML = \`
-                  <img src="\${url}" class="thumb-img">
-                  <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${badgeStr} \${file.name}</div>
-                  <div style="font-size:11px; color:#ef4444; text-decoration:line-through;">\${originalSize}</div>
-                  <div style="font-size:14px; color:#10b981; font-weight:bold;">\${newSize}</div>
-                  <a href="\${url}" download="opt_\${file.name.split('.')[0]}.webp" class="dl-btn">⬇️ ダウンロード</a>
-                \`;
-                gallery.prepend(card);
-              }, 'image/webp', 0.85);
-            };
-            img.src = e.target.result;
-          };
-          reader.readAsDataURL(file);
-        }
-      </script>
-    </body>
-    </html>
-  `);
-});
-
-// --- ★ 新機能: プライベートチャット (Firebase Realtime DB) ---
-app.get('/chat', c => {
   return c.html(html`
     <!DOCTYPE html>
     <html lang="ja">
@@ -789,14 +624,13 @@ app.get('/chat', c => {
         <div class="nav-links">
           <a href="/">Home</a>
           <a href="/diary">Diary</a>
-          <a href="/image-optimizer">Opt</a>
           <a href="/chat" class="active">Chat</a>
         </div>
       </header>
       
       <div class="chat-container">
         <div id="messages" class="messages-area">
-          <div style="text-align:center; color:#4b5563; font-size:12px; margin-top:20px;">🔒 暗号化されたプライベートチャットです</div>
+          <div style="text-align:center; color:#4b5563; font-size:12px; margin-top:20px; margin-bottom:10px;">🔒 暗号化されたプライベートチャットです</div>
         </div>
         
         <form id="chat-form" class="input-area">
@@ -806,11 +640,9 @@ app.get('/chat', c => {
       </div>
 
       <script type="module">
-        // Firebaseの最新SDKを読み込み
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, push, onChildAdded, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, push, onChildAdded, serverTimestamp, get, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // いただいたカギ情報＋データベースURL
         const firebaseConfig = {
           apiKey: "AIzaSyBy5eQzR6Uufiy-aD8KEBOt8hO59UmWVP0",
           authDomain: "private-chat-54723.firebaseapp.com",
@@ -822,12 +654,10 @@ app.get('/chat', c => {
           databaseURL: "https://private-chat-54723-default-rtdb.asia-southeast1.firebasedatabase.app"
         };
 
-        // Firebase起動
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         const messagesRef = ref(db, 'messages');
 
-        // 自分の名前をブラウザに記憶させる
         let myName = localStorage.getItem('chat_name');
         if(!myName) {
           myName = prompt("あなたの名前（表示名）を入力してください") || "ゲスト";
@@ -839,26 +669,22 @@ app.get('/chat', c => {
         const chatInput = document.getElementById('chat-input');
         const sendBtn = document.getElementById('send-btn');
 
-        // 改行対応の自動リサイズ
         chatInput.addEventListener('input', function() {
           this.style.height = 'auto';
           this.style.height = (this.scrollHeight < 100 ? this.scrollHeight : 100) + 'px';
         });
 
-        // データベースに新しいメッセージが追加された瞬間（リアルタイム）に動く魔法のコード
-        onChildAdded(messagesRef, (snapshot) => {
-          const data = snapshot.val();
+        // 吹き出しを画面に作る関数
+        function renderMessage(data) {
           const isMe = data.sender === myName;
-          
           let timeStr = "";
           if(data.timestamp) {
             const d = new Date(data.timestamp);
-            timeStr = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+            timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
           }
 
           const msgWrapper = document.createElement('div');
           msgWrapper.className = 'msg-wrapper ' + (isMe ? 'me' : 'other');
-          
           msgWrapper.innerHTML = \`
             <div class="msg-content">
               \${!isMe ? \`<div class="sender-name">\${data.sender}</div>\` : ''}
@@ -866,12 +692,48 @@ app.get('/chat', c => {
             </div>
             <div class="chat-time">\${timeStr}</div>
           \`;
-          
           messagesDiv.appendChild(msgWrapper);
-          messagesDiv.scrollTop = messagesDiv.scrollHeight; // 一番下にスクロール
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // 1. まず Cloudflare (D1) から送られてきた「過去ログ」をすべて表示する
+        const archivedMessages = ${raw(JSON.stringify(archived.results))};
+        archivedMessages.forEach(msg => renderMessage(msg));
+
+        // 2. 次に Firebase をチェックし「3日以上前のメッセージ」があれば自動で D1 に引っ越す
+        const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
+        
+        get(messagesRef).then(async (snapshot) => {
+           const data = snapshot.val();
+           if(data) {
+             const toArchive = [];
+             for(const key in data) {
+               if(data[key].timestamp < threeDaysAgo) {
+                 toArchive.push({ id: key, sender: data[key].sender, text: data[key].text, timestamp: data[key].timestamp });
+               }
+             }
+             
+             // 3日前のメッセージが見つかったら、CloudflareのAPIに投げて保存し、Firebaseから消す
+             if(toArchive.length > 0) {
+               try {
+                 await fetch('/api/chat/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: toArchive }) });
+                 for(const msg of toArchive) {
+                   remove(ref(db, 'messages/' + msg.id));
+                 }
+               } catch(e) {}
+             }
+           }
         });
 
-        // 送信ボタンを押した時の処理
+        // 3. 最新のメッセージをリアルタイムで受信して表示する
+        onChildAdded(messagesRef, (snapshot) => {
+          const data = snapshot.val();
+          // すでにお引っ越し処理対象になった古いデータは重複表示を避ける
+          if (data.timestamp < threeDaysAgo) return; 
+          renderMessage(data);
+        });
+
+        // メッセージ送信処理
         chatForm.addEventListener('submit', async (e) => {
           e.preventDefault();
           const text = chatInput.value.trim();
@@ -881,7 +743,6 @@ app.get('/chat', c => {
           chatInput.style.height = 'auto';
           sendBtn.disabled = true;
           
-          // Firebaseのデータベースに送信
           try {
             await push(messagesRef, {
               sender: myName,
@@ -895,7 +756,6 @@ app.get('/chat', c => {
           chatInput.focus();
         });
 
-        // Enterキーで送信（Shift+Enterで改行）
         chatInput.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -928,6 +788,19 @@ app.get('/api/ogp', async c => {
   } catch (e) {
     return c.json({ error: 'failed' });
   }
+});
+
+// ★ 追加: FirebaseからD1へのお引っ越しを受け取る専用API
+app.post('/api/chat/archive', async c => {
+  const { messages } = await c.req.json();
+  if (!messages || messages.length === 0) return c.json({ success: true });
+  
+  // 送られてきた古いメッセージをD1にまとめて保存
+  const stmt = c.env.DB.prepare('INSERT OR IGNORE INTO private_chats (id, sender, text, timestamp) VALUES (?, ?, ?, ?)');
+  const batch = messages.map(m => stmt.bind(m.id, m.sender, m.text, m.timestamp));
+  await c.env.DB.batch(batch);
+  
+  return c.json({ success: true });
 });
 
 app.post('/api/checkin', async c => { 
@@ -978,7 +851,6 @@ app.get('/diary', async c => {
         <div class="nav-links" style="display: flex; gap: 15px;">
           <a href="/" style="font-weight: 600; color: #64748b; text-decoration: none;">Home</a>
           <a href="/diary" style="font-weight: 600; color: #3b82f6; text-decoration: none;">Diary</a>
-          <a href="/image-optimizer" style="font-weight: 600; color: #64748b; text-decoration: none;">Opt</a>
           <a href="/chat" style="font-weight: 600; color: #64748b; text-decoration: none;">Chat</a>
         </div>
       </header>
