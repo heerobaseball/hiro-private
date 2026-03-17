@@ -86,7 +86,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     <div class="card col-span-2"><div class="card-header"><span class="card-icon">📰</span> ニュース</div><div class="tabs"><button class="tab-btn active" data-target="tab-top">主要</button><button class="tab-btn" data-target="tab-biz">政治・経済</button><button class="tab-btn" data-target="tab-market">マーケット</button><button class="tab-btn" data-target="tab-it">IT</button></div><div class="news-list-container">${renderNewsTab(news.top, 'tab-top', true)} ${renderNewsTab(news.biz, 'tab-biz', false)} ${renderNewsTab(news.market, 'tab-market', false)} ${renderNewsTab(news.it, 'tab-it', false)}</div></div>
     <div class="card col-span-1"><div class="card-header"><span class="card-icon">📝</span> メモ</div><form class="form-row" method="POST" action="/memo/add"><input type="text" name="content" placeholder="新規メモ..." required autocomplete="off"><button type="submit">+</button></form><div class="list-area">${memos.results.map(m => html`<div style="background:#f8fafc; border:1px solid var(--brd); border-radius:8px; padding:10px; position:relative;"><textarea data-id="${m.id}" class="memo-textarea" style="width:100%; border:none; background:transparent; resize:none; outline:none; font-family:inherit;">${m.content}</textarea><form method="POST" action="/memo/delete" style="margin:0;"><input type="hidden" name="id" value="${m.id}"><button type="submit" style="position:absolute; top:-6px; right:-6px; background:#ef4444; color:white; border:none; border-radius:50%; width:22px; height:22px;">×</button></form></div>`)}</div></div>
     <div class="card col-span-2"><div class="card-header"><span class="card-icon">✅</span> ToDoリスト</div><div class="list-area">${todos.results.map(t => html`<div style="background:#f8fafc; border:1px solid var(--brd); border-radius:8px; padding:10px; display:flex; align-items:center; gap:8px;"><form method="POST" action="/todos/toggle" style="margin:0;"><input type="hidden" name="id" value="${t.id}"><input type="hidden" name="current" value="${t.is_completed}"><button type="submit" style="width:24px; height:24px; border-radius:6px; border:2px solid ${t.is_completed?'var(--pri)':'#cbd5e1'}; background:${t.is_completed?'var(--pri)':'white'}; color:white;">${t.is_completed?'✓':''}</button></form><div style="flex-grow:1; font-weight:500; ${t.is_completed?'text-decoration:line-through; color:var(--mut); font-weight:400;':''}">${t.task}</div><form method="POST" action="/todos/delete" style="margin:0;"><input type="hidden" name="id" value="${t.id}"><button type="submit" style="background:transparent; border:none; color:#ef4444; font-size:1.4rem; padding:0;">×</button></form></div>`)}</div><form class="form-row" method="POST" action="/todos/add" style="margin-top:12px;"><input type="text" name="task" placeholder="タスク追加..." required><button type="submit">追加</button></form></div>
-    <div class="card col-span-1"><div class="card-header"><span class="card-icon">📅</span> スケジュール</div><iframe src="https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=Asia%2FTokyo&showPrint=0&src=aGVlcm8uYmFzZWJhbGxAZ21haWwuY29t&src=MTVrYTNuOXA0NGlwcjZrMDNtamRoMzk3MGNAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=MG81bzExMWh1MmF1c2xwbW92bjRtZHR1bzRAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=amEuamFwYW5lc2UjaG9saWRheUBncm91cC52LmNhbGVuZGFyLmdvb2dsZS5jb20&src=aHQzamxmYWFjNWxmZDYyNjN1bGZoNHRxbDhAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&color=%233f51b5" style="border:0" width="100%" height="350"></iframe></div>
+    <div class="card col-span-1"><div class="card-header"><span class="card-icon">📅</span> スケジュール</div><iframe src="https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=Asia%2FTokyo&showPrint=0&src=aGVlcm8uYmFzZWJhbGxAZ21haWwuY29t&color=%233f51b5" style="border:0" width="100%" height="350"></iframe></div>
     <div class="card col-span-2"><div class="card-header"><span class="card-icon">📈</span> マーケット</div><div class="tradingview-widget-container" style="height:350px;"><div class="tradingview-widget-container__widget"></div><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>{"width": "100%", "height": 350, "symbolsGroups": [{"name": "Watchlist", "symbols": [{"name": "FOREXCOM:SPXUSD", "displayName": "S&P 500"}, {"name": "AMEX:VOO", "displayName": "Vanguard S&P 500 ETF"}, {"name": "NYSE:KO", "displayName": "Coca-Cola"}, {"name": "FX_IDC:USDJPY", "displayName": "USD/JPY"}, {"name": "BITSTAMP:BTCUSD", "displayName": "BTC/USD"}, {"name": "BITSTAMP:ETHUSD", "displayName": "ETH/USD"}, {"name": "BITSTAMP:XRPUSD", "displayName": "XRP/USD"}, {"name": "COINBASE:SHIBUSD", "displayName": "SHIB/USD"}]}], "colorTheme": "light", "isTransparent": true, "locale": "ja"}</script></div></div>
     <div class="card col-span-1"><div class="card-header" style="justify-content:space-between; width:100%;"><div><span class="card-icon">✨</span> Gemini Chat</div><form method="POST" action="/api/gemini/clear" style="margin:0;" onsubmit="return confirm('消去しますか？');"><button type="submit" style="font-size:12px; border:none; background:none; color:var(--mut); text-decoration:underline;">クリア</button></form></div><div id="chat-history" class="list-area" style="background:var(--bg); padding:12px; border-radius:8px; border:1px solid var(--brd); margin-bottom:8px;">${chatHist.length===0?html`<div class="chat-msg ai-msg">こんにちは！画像を添付しての相談も可能です。</div>`:''}${chatHist.map(c => html`<div class="chat-msg ${c.role==='user'?'user-msg':'ai-msg'}">${c.message}</div>`)}</div><div id="image-preview-container" style="display:none; margin-bottom:8px; position:relative; width:fit-content;"><img id="image-preview" style="max-height:80px; border-radius:8px; border:1px solid var(--brd);"><div id="clear-image" style="position:absolute; top:-5px; right:-5px; background:#ef4444; color:white; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:12px; cursor:pointer;">×</div></div><form id="gemini-form" class="form-row" style="align-items:center; margin:0;"><label for="chat-image-input" style="font-size:24px; cursor:pointer; margin-right:5px;">📷</label><input type="file" id="chat-image-input" accept="image/*" style="display:none;" capture="environment"><input type="text" id="gemini-input" placeholder="メッセージ..." required autocomplete="off"><button type="submit" id="gemini-submit">▶</button></form></div>
     <div class="card col-span-2"><div class="card-header" style="justify-content:space-between; width:100%;"><div><span class="card-icon">📸</span> Diary</div><a href="/diary/post" style="font-size:14px; color:var(--pri); font-weight:bold;">＋ 投稿</a></div><div class="list-area" style="max-height:350px;">${notes.results.map(n => { const d = new Date(n.created_at+9*3600000); return html`<a href="/diary" class="diary-list-item">${n.image_url?html`<img src="${n.image_url}" class="diary-list-thumb" loading="lazy">`:html`<div class="diary-list-thumb no-img" style="background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:1.5rem;">📝</div>`}<div style="flex-grow:1; overflow:hidden; display:flex; flex-direction:column; gap:4px;"><div style="font-size:0.75rem; color:var(--pri); font-weight:bold;">${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}</div><div style="font-size:0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${n.content.replace(/\n/g, ' ')}</div></div></a>`; })}</div></div>
@@ -159,7 +159,7 @@ app.get('/chat', async c => {
   `);
 });
 
-// --- ★ 新機能: 音声通話（録音対応・映像なし激軽Ver） ---
+// --- ★ 修正: 音声通話（ブラウザの自動再生ブロックを突破する強制再生仕様） ---
 app.get('/call', c => {
   return c.html(html`
     <!DOCTYPE html>
@@ -196,7 +196,7 @@ app.get('/call', c => {
         <div id="avatar" class="avatar-circle">📞</div>
         <div id="status-text">待機中... マイクを許可してください</div>
         
-        <audio id="remoteAudio" autoplay></audio>
+        <audio id="remoteAudio" autoplay playsinline></audio>
 
         <div class="controls">
           <button id="btn-call" class="btn btn-call" disabled>発信</button>
@@ -231,12 +231,8 @@ app.get('/call', c => {
 
         async function setupMedia() {
           try {
-            // ★映像(video)を完全にOFFにして、音声(audio)のみ取得します。激軽になります！
             localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
             localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-            
-            remoteStream = new MediaStream();
-            remoteAudio.srcObject = remoteStream; // 受け取った音声を透明なプレーヤーに流す
             
             statusText.textContent = '準備完了: 発信してください';
             btnCall.disabled = false;
@@ -250,11 +246,22 @@ app.get('/call', c => {
                 avatar.style.background = 'var(--primary)';
               }
             });
-          } catch (e) { statusText.textContent = 'マイクの許可が必要です'; }
+          } catch (e) { 
+            statusText.textContent = 'マイクの許可が必要です（OSの設定も確認してください）'; 
+          }
         }
 
+        // ★修正: 空の箱に継ぎ足すのではなく、スピーカー(audioタグ)に直結して強制的にPlayさせる
         pc.ontrack = e => {
-          e.streams[0].getTracks().forEach(t => remoteStream.addTrack(t));
+          remoteStream = e.streams[0];
+          if (remoteAudio.srcObject !== remoteStream) {
+            remoteAudio.srcObject = remoteStream;
+          }
+          // ブラウザの自動再生ブロックを突破するために明示的にPlayを呼ぶ
+          remoteAudio.play().catch(err => {
+            console.error('音声の自動再生がブラウザにブロックされました:', err);
+            statusText.textContent = '音声再生エラー: 画面を一度タップしてください';
+          });
           btnRecord.disabled = false;
         };
 
@@ -295,7 +302,6 @@ app.get('/call', c => {
 
         btnHangup.onclick = async () => { pc.close(); await remove(callDoc); location.reload(); };
 
-        // ★録音機能 (音声ファイルとしてダウンロード)
         btnRecord.onclick = () => {
           if (mediaRecorder && mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
@@ -304,7 +310,8 @@ app.get('/call', c => {
             statusText.textContent = '録音を保存しました';
           } else {
             recordedChunks = [];
-            mediaRecorder = new MediaRecorder(remoteStream, { mimeType: 'audio/webm' }); // 音声のみ
+            // リモートストリーム（相手の音声）を録音の対象にする
+            mediaRecorder = new MediaRecorder(remoteStream, { mimeType: 'audio/webm' });
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
             mediaRecorder.onstop = () => {
               const b = new Blob(recordedChunks, { type: 'audio/webm' });
