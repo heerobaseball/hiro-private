@@ -190,7 +190,15 @@ app.get('/', async (c) => {
   </style>
 </head>
 <body>
-  <header class="navbar"><div class="nav-brand">My Dashboard</div><div class="nav-links"><a href="/" class="active">Home</a><a href="/diary">Diary</a><a href="/image-optimizer">Optimizer</a></div></header>
+  <header class="navbar">
+    <div class="nav-brand">My Dashboard</div>
+    <div class="nav-links">
+      <a href="/" class="active">Home</a>
+      <a href="/diary">Diary</a>
+      <a href="/image-optimizer">Opt</a>
+      <a href="/chat">Chat</a>
+    </div>
+  </header>
   <main>
     <div class="container">
       
@@ -559,7 +567,7 @@ app.get('/', async (c) => {
   `);
 });
 
-// --- 新機能: 画像オプティマイザー (補正機能つき) ---
+// --- 画像オプティマイザー ---
 app.get('/image-optimizer', c => {
   return c.html(html`
     <!DOCTYPE html>
@@ -597,7 +605,8 @@ app.get('/image-optimizer', c => {
         <div class="nav-links">
           <a href="/">Home</a>
           <a href="/diary">Diary</a>
-          <a href="/image-optimizer" class="active">Optimizer</a>
+          <a href="/image-optimizer" class="active">Opt</a>
+          <a href="/chat">Chat</a>
         </div>
       </header>
       
@@ -647,7 +656,7 @@ app.get('/image-optimizer', c => {
             if (!file.type.startsWith('image/')) continue;
             processImage(file, doBright, doSharp);
           }
-          fileInput.value = ''; // リセット
+          fileInput.value = '';
         }
 
         function processImage(file, doBright, doSharp) {
@@ -671,38 +680,33 @@ app.get('/image-optimizer', c => {
               canvas.width = width; canvas.height = height;
               const ctx = canvas.getContext('2d');
 
-              // 1. 明るさ・コントラスト補正 (Canvas Filter)
               if (doBright) {
                 ctx.filter = 'brightness(130%) contrast(115%) saturate(110%)';
               }
               
               ctx.drawImage(img, 0, 0, width, height);
-              ctx.filter = 'none'; // リセット
+              ctx.filter = 'none';
 
-              // 2. シャープネス補正 (コンボリューション行列計算)
               if (doSharp) {
                 const imgData = ctx.getImageData(0, 0, width, height);
                 const data = imgData.data;
-                const copy = new Uint8ClampedArray(data); // 元データをコピー
-                
-                // 3x3の単純なアンシャープマスク行列 [0, -1, 0, -1, 5, -1, 0, -1, 0]
+                const copy = new Uint8ClampedArray(data);
                 for(let y = 1; y < height - 1; y++) {
                   for(let x = 1; x < width - 1; x++) {
                     const i = (y * width + x) * 4;
-                    for(let c = 0; c < 3; c++) { // R, G, Bのみ (Alphaは無視)
+                    for(let c = 0; c < 3; c++) {
                       const val = 5 * copy[i+c] 
                                 - copy[i - 4 + c] 
                                 - copy[i + 4 + c] 
                                 - copy[(y - 1) * width * 4 + x * 4 + c] 
                                 - copy[(y + 1) * width * 4 + x * 4 + c];
-                      data[i+c] = val; // Uint8ClampedArray なので自動的に0〜255に収まります
+                      data[i+c] = val; 
                     }
                   }
                 }
                 ctx.putImageData(imgData, 0, 0);
               }
 
-              // WebPで圧縮して出力
               canvas.toBlob((blob) => {
                 const originalSize = (file.size / 1024).toFixed(1) + ' KB';
                 const newSize = (blob.size / 1024).toFixed(1) + ' KB';
@@ -734,7 +738,177 @@ app.get('/image-optimizer', c => {
   `);
 });
 
-// --- API ---
+// --- ★ 新機能: プライベートチャット (Firebase Realtime DB) ---
+app.get('/chat', c => {
+  return c.html(html`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+      <meta name="theme-color" content="#8bb7ea">
+      <title>Private Chat - My Dashboard</title>
+      <style>
+        :root { --bg: #8bb7ea; --text-main: #0f172a; --border: #e2e8f0; --primary: #3b82f6; }
+        body { margin: 0; background: var(--bg); color: var(--text-main); font-family: -apple-system, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        a { text-decoration: none; color: inherit; }
+        .navbar { display: flex; justify-content: space-between; align-items: center; background: #ffffff; padding: 0.8rem 1.5rem; border-bottom: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,0.05); flex-shrink: 0; }
+        .nav-brand { font-size: 1.2rem; font-weight: 900; }
+        .nav-links { display: flex; gap: 15px; } .nav-links a { font-weight: 600; color: #64748b; }
+        .nav-links a.active { color: var(--primary); }
+        
+        .chat-container { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; max-width: 800px; margin: 0 auto; width: 100%; background: #8bb7ea; }
+        .messages-area { flex-grow: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; }
+        
+        /* LINE風デザイン */
+        .msg-wrapper { display: flex; align-items: flex-end; margin-bottom: 5px; width: 100%; }
+        .msg-wrapper.me { flex-direction: row-reverse; }
+        .msg-wrapper.other { flex-direction: row; }
+        
+        .msg-content { max-width: 75%; display: flex; flex-direction: column; }
+        .msg-wrapper.me .msg-content { align-items: flex-end; }
+        .msg-wrapper.other .msg-content { align-items: flex-start; }
+        
+        .sender-name { font-size: 11px; color: #4b5563; margin-bottom: 2px; margin-left: 5px; }
+        .chat-bubble { padding: 10px 14px; font-size: 15px; line-height: 1.4; word-break: break-word; white-space: pre-wrap; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .bg-me { background: #8ce245; color: #000; border-radius: 16px 16px 0 16px; }
+        .bg-other { background: #ffffff; color: #000; border-radius: 16px 16px 16px 0; }
+        
+        .chat-time { font-size: 10px; color: #4b5563; margin: 0 5px; margin-bottom: 2px; }
+
+        /* 入力エリア */
+        .input-area { display: flex; padding: 10px 15px; background: #ffffff; border-top: 1px solid var(--border); flex-shrink: 0; align-items: flex-end; gap: 8px; }
+        .chat-input { flex-grow: 1; padding: 12px; border: 1px solid #cbd5e1; border-radius: 20px; font-size: 16px; outline: none; background: #f8fafc; resize: none; max-height: 100px; font-family: inherit; }
+        .send-btn { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; font-size: 15px; height: 44px; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
+        .send-btn:active { transform: scale(0.95); }
+      </style>
+    </head>
+    <body>
+      <header class="navbar">
+        <div class="nav-brand">My Dashboard</div>
+        <div class="nav-links">
+          <a href="/">Home</a>
+          <a href="/diary">Diary</a>
+          <a href="/image-optimizer">Opt</a>
+          <a href="/chat" class="active">Chat</a>
+        </div>
+      </header>
+      
+      <div class="chat-container">
+        <div id="messages" class="messages-area">
+          <div style="text-align:center; color:#4b5563; font-size:12px; margin-top:20px;">🔒 暗号化されたプライベートチャットです</div>
+        </div>
+        
+        <form id="chat-form" class="input-area">
+          <textarea id="chat-input" class="chat-input" placeholder="メッセージを入力..." rows="1"></textarea>
+          <button type="submit" class="send-btn" id="send-btn">送信</button>
+        </form>
+      </div>
+
+      <script type="module">
+        // Firebaseの最新SDKを読み込み
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, push, onChildAdded, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        // いただいたカギ情報＋データベースURL
+        const firebaseConfig = {
+          apiKey: "AIzaSyBy5eQzR6Uufiy-aD8KEBOt8hO59UmWVP0",
+          authDomain: "private-chat-54723.firebaseapp.com",
+          projectId: "private-chat-54723",
+          storageBucket: "private-chat-54723.firebasestorage.app",
+          messagingSenderId: "683142642820",
+          appId: "1:683142642820:web:b59761f61548ad321d96d1",
+          measurementId: "G-J1036BX3BR",
+          databaseURL: "https://private-chat-54723-default-rtdb.asia-southeast1.firebasedatabase.app"
+        };
+
+        // Firebase起動
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const messagesRef = ref(db, 'messages');
+
+        // 自分の名前をブラウザに記憶させる
+        let myName = localStorage.getItem('chat_name');
+        if(!myName) {
+          myName = prompt("あなたの名前（表示名）を入力してください") || "ゲスト";
+          localStorage.setItem('chat_name', myName);
+        }
+
+        const messagesDiv = document.getElementById('messages');
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        // 改行対応の自動リサイズ
+        chatInput.addEventListener('input', function() {
+          this.style.height = 'auto';
+          this.style.height = (this.scrollHeight < 100 ? this.scrollHeight : 100) + 'px';
+        });
+
+        // データベースに新しいメッセージが追加された瞬間（リアルタイム）に動く魔法のコード
+        onChildAdded(messagesRef, (snapshot) => {
+          const data = snapshot.val();
+          const isMe = data.sender === myName;
+          
+          let timeStr = "";
+          if(data.timestamp) {
+            const d = new Date(data.timestamp);
+            timeStr = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+          }
+
+          const msgWrapper = document.createElement('div');
+          msgWrapper.className = 'msg-wrapper ' + (isMe ? 'me' : 'other');
+          
+          msgWrapper.innerHTML = \`
+            <div class="msg-content">
+              \${!isMe ? \`<div class="sender-name">\${data.sender}</div>\` : ''}
+              <div class="chat-bubble \${isMe ? 'bg-me' : 'bg-other'}">\${data.text.replace(/\\n/g, '<br>')}</div>
+            </div>
+            <div class="chat-time">\${timeStr}</div>
+          \`;
+          
+          messagesDiv.appendChild(msgWrapper);
+          messagesDiv.scrollTop = messagesDiv.scrollHeight; // 一番下にスクロール
+        });
+
+        // 送信ボタンを押した時の処理
+        chatForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const text = chatInput.value.trim();
+          if(!text) return;
+          
+          chatInput.value = '';
+          chatInput.style.height = 'auto';
+          sendBtn.disabled = true;
+          
+          // Firebaseのデータベースに送信
+          try {
+            await push(messagesRef, {
+              sender: myName,
+              text: text,
+              timestamp: serverTimestamp()
+            });
+          } catch(e) {
+            alert("送信に失敗しました");
+          }
+          sendBtn.disabled = false;
+          chatInput.focus();
+        });
+
+        // Enterキーで送信（Shift+Enterで改行）
+        chatInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            chatForm.dispatchEvent(new Event('submit'));
+          }
+        });
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+// --- API (これまで通り) ---
 const getMeta = (htmlText, prop) => {
   const reg = new RegExp(`<meta(?:\\s+[^>]*?)?(?:property|name)=["']${prop}["']\\s+content=["']([^"']*)["']`, 'i');
   const reg2 = new RegExp(`<meta(?:\\s+[^>]*?)?content=["']([^"']*)["']\\s+(?:property|name)=["']${prop}["']`, 'i');
@@ -804,7 +978,8 @@ app.get('/diary', async c => {
         <div class="nav-links" style="display: flex; gap: 15px;">
           <a href="/" style="font-weight: 600; color: #64748b; text-decoration: none;">Home</a>
           <a href="/diary" style="font-weight: 600; color: #3b82f6; text-decoration: none;">Diary</a>
-          <a href="/image-optimizer" style="font-weight: 600; color: #64748b; text-decoration: none;">Optimizer</a>
+          <a href="/image-optimizer" style="font-weight: 600; color: #64748b; text-decoration: none;">Opt</a>
+          <a href="/chat" style="font-weight: 600; color: #64748b; text-decoration: none;">Chat</a>
         </div>
       </header>
 
