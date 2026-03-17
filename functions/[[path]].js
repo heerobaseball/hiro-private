@@ -196,6 +196,7 @@ app.get('/', async (c) => {
       <a href="/" class="active">Home</a>
       <a href="/diary">Diary</a>
       <a href="/chat">Chat</a>
+      <a href="/call">Call</a>
     </div>
   </header>
   <main>
@@ -568,11 +569,8 @@ app.get('/', async (c) => {
 
 // --- プライベートチャット (Firebase Realtime DB + D1過去ログ自動アーカイブ) ---
 app.get('/chat', async c => {
-  // 1. まず、365日以上前の古い過去ログを D1 (Cloudflare) から自動で削除する
   const oneYearAgo = Date.now() - (365 * 24 * 60 * 60 * 1000);
   await c.env.DB.prepare('DELETE FROM private_chats WHERE timestamp < ?').bind(oneYearAgo).run();
-
-  // 2. D1 (Cloudflare) に保存されている過去ログ(直近200件)を取得して画面に渡す
   const archived = await c.env.DB.prepare('SELECT * FROM private_chats ORDER BY timestamp ASC LIMIT 200').all();
 
   return c.html(html`
@@ -595,7 +593,6 @@ app.get('/chat', async c => {
         .chat-container { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; max-width: 800px; margin: 0 auto; width: 100%; background: #8bb7ea; }
         .messages-area { flex-grow: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; }
         
-        /* LINE風デザイン */
         .msg-wrapper { display: flex; align-items: flex-end; margin-bottom: 5px; width: 100%; }
         .msg-wrapper.me { flex-direction: row-reverse; }
         .msg-wrapper.other { flex-direction: row; }
@@ -611,7 +608,6 @@ app.get('/chat', async c => {
         
         .chat-time { font-size: 10px; color: #4b5563; margin: 0 5px; margin-bottom: 2px; }
 
-        /* 入力エリア */
         .input-area { display: flex; padding: 10px 15px; background: #ffffff; border-top: 1px solid var(--border); flex-shrink: 0; align-items: flex-end; gap: 8px; }
         .chat-input { flex-grow: 1; padding: 12px; border: 1px solid #cbd5e1; border-radius: 20px; font-size: 16px; outline: none; background: #f8fafc; resize: none; max-height: 100px; font-family: inherit; }
         .send-btn { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; font-size: 15px; height: 44px; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
@@ -625,6 +621,7 @@ app.get('/chat', async c => {
           <a href="/">Home</a>
           <a href="/diary">Diary</a>
           <a href="/chat" class="active">Chat</a>
+          <a href="/call">Call</a>
         </div>
       </header>
       
@@ -674,7 +671,6 @@ app.get('/chat', async c => {
           this.style.height = (this.scrollHeight < 100 ? this.scrollHeight : 100) + 'px';
         });
 
-        // 吹き出しを画面に作る関数
         function renderMessage(data) {
           const isMe = data.sender === myName;
           let timeStr = "";
@@ -696,11 +692,9 @@ app.get('/chat', async c => {
           messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        // 1. まず Cloudflare (D1) から送られてきた「過去ログ」をすべて表示する
         const archivedMessages = ${raw(JSON.stringify(archived.results))};
         archivedMessages.forEach(msg => renderMessage(msg));
 
-        // 2. 次に Firebase をチェックし「3日以上前のメッセージ」があれば自動で D1 に引っ越す
         const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
         
         get(messagesRef).then(async (snapshot) => {
@@ -713,7 +707,6 @@ app.get('/chat', async c => {
                }
              }
              
-             // 3日前のメッセージが見つかったら、CloudflareのAPIに投げて保存し、Firebaseから消す
              if(toArchive.length > 0) {
                try {
                  await fetch('/api/chat/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: toArchive }) });
@@ -725,15 +718,12 @@ app.get('/chat', async c => {
            }
         });
 
-        // 3. 最新のメッセージをリアルタイムで受信して表示する
         onChildAdded(messagesRef, (snapshot) => {
           const data = snapshot.val();
-          // すでにお引っ越し処理対象になった古いデータは重複表示を避ける
           if (data.timestamp < threeDaysAgo) return; 
           renderMessage(data);
         });
 
-        // メッセージ送信処理
         chatForm.addEventListener('submit', async (e) => {
           e.preventDefault();
           const text = chatInput.value.trim();
@@ -768,6 +758,298 @@ app.get('/chat', async c => {
   `);
 });
 
+
+// --- ★ 新機能: ビデオ通話＆録画アプリ (WebRTC + Firebase Signaling) ---
+app.get('/call', c => {
+  return c.html(html`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+      <meta name="theme-color" content="#1e293b">
+      <title>Video Call - My Dashboard</title>
+      <style>
+        :root { --bg: #1e293b; --text-main: #f8fafc; --primary: #3b82f6; --danger: #ef4444; --success: #10b981; }
+        body { margin: 0; background: var(--bg); color: var(--text-main); font-family: -apple-system, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        a { text-decoration: none; color: inherit; }
+        .navbar { display: flex; justify-content: space-between; align-items: center; background: #0f172a; padding: 0.8rem 1.5rem; border-bottom: 1px solid #334155; flex-shrink: 0; }
+        .nav-brand { font-size: 1.2rem; font-weight: 900; }
+        .nav-links { display: flex; gap: 15px; } .nav-links a { font-weight: 600; color: #94a3b8; }
+        .nav-links a.active { color: var(--primary); }
+        
+        .call-container { flex-grow: 1; display: flex; flex-direction: column; padding: 15px; max-width: 900px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+        
+        .videos { flex-grow: 1; position: relative; background: #000; border-radius: 12px; overflow: hidden; display: flex; justify-content: center; align-items: center; }
+        #remoteVideo { width: 100%; height: 100%; object-fit: cover; }
+        #localVideo { position: absolute; bottom: 20px; right: 20px; width: 120px; height: 160px; object-fit: cover; border-radius: 8px; border: 2px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transform: scaleX(-1); background: #333; }
+        
+        .controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; padding: 20px 0; flex-shrink: 0; }
+        .btn { padding: 12px 24px; border: none; border-radius: 30px; font-weight: bold; font-size: 16px; cursor: pointer; color: white; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
+        .btn:active { transform: scale(0.95); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-call { background: var(--success); }
+        .btn-answer { background: var(--primary); }
+        .btn-hangup { background: var(--danger); }
+        .btn-record { background: #f59e0b; }
+        
+        #status-text { text-align: center; margin-bottom: 10px; font-size: 14px; color: #cbd5e1; height: 20px; }
+      </style>
+    </head>
+    <body>
+      <header class="navbar">
+        <div class="nav-brand">My Dashboard</div>
+        <div class="nav-links">
+          <a href="/">Home</a>
+          <a href="/diary">Diary</a>
+          <a href="/chat">Chat</a>
+          <a href="/call" class="active">Call</a>
+        </div>
+      </header>
+      
+      <div class="call-container">
+        <div id="status-text">待機中... カメラとマイクを許可してください</div>
+        
+        <div class="videos">
+          <video id="remoteVideo" autoplay playsinline></video>
+          <video id="localVideo" autoplay playsinline muted></video>
+        </div>
+
+        <div class="controls">
+          <button id="btn-call" class="btn btn-call" disabled>📞 発信</button>
+          <button id="btn-answer" class="btn btn-answer" disabled>受信中(0)</button>
+          <button id="btn-hangup" class="btn btn-hangup" disabled>☎️ 切断</button>
+          <button id="btn-record" class="btn btn-record" disabled>🔴 録画開始</button>
+        </div>
+      </div>
+
+      <script type="module">
+        // Firebaseの読み込み (チャットと同じ鍵を使います)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, get, onValue, push, remove, onChildAdded } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyBy5eQzR6Uufiy-aD8KEBOt8hO59UmWVP0",
+          authDomain: "private-chat-54723.firebaseapp.com",
+          projectId: "private-chat-54723",
+          storageBucket: "private-chat-54723.firebasestorage.app",
+          messagingSenderId: "683142642820",
+          appId: "1:683142642820:web:b59761f61548ad321d96d1",
+          measurementId: "G-J1036BX3BR",
+          databaseURL: "https://private-chat-54723-default-rtdb.asia-southeast1.firebasedatabase.app"
+        };
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // WebRTCの設定 (Googleの無料STUNサーバーを使います)
+        const servers = {
+          iceServers: [
+            { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+          ],
+          iceCandidatePoolSize: 10,
+        };
+
+        let pc = new RTCPeerConnection(servers);
+        let localStream = null;
+        let remoteStream = null;
+
+        // 録画機能用変数
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        // UI要素
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const btnCall = document.getElementById('btn-call');
+        const btnAnswer = document.getElementById('btn-answer');
+        const btnHangup = document.getElementById('btn-hangup');
+        const btnRecord = document.getElementById('btn-record');
+        const statusText = document.getElementById('status-text');
+
+        // 固定の通話ルーム
+        const callDoc = ref(db, 'calls/private_room');
+        const offerCandidatesRef = ref(db, 'calls/private_room/offerCandidates');
+        const answerCandidatesRef = ref(db, 'calls/private_room/answerCandidates');
+
+        // 1. カメラとマイクの起動
+        async function setupMedia() {
+          try {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localVideo.srcObject = localStream;
+            
+            // localStreamをWebRTC接続に追加
+            localStream.getTracks().forEach((track) => {
+              pc.addTrack(track, localStream);
+            });
+
+            remoteStream = new MediaStream();
+            remoteVideo.srcObject = remoteStream;
+            
+            statusText.textContent = '準備完了: 相手を待つか発信してください';
+            btnCall.disabled = false;
+            
+            // Firebaseを監視して着信(Offer)がないかチェック
+            onValue(callDoc, (snapshot) => {
+              const data = snapshot.val();
+              if (data && data.offer && !pc.currentRemoteDescription) {
+                btnAnswer.disabled = false;
+                btnAnswer.textContent = '📲 応答する';
+                statusText.textContent = '着信があります！';
+              }
+            });
+
+          } catch (error) {
+            statusText.textContent = 'エラー: カメラ・マイクの許可が必要です';
+            console.error(error);
+          }
+        }
+
+        // WebRTCから相手の映像が届いた時の処理
+        pc.ontrack = (event) => {
+          event.streams[0].getTracks().forEach((track) => {
+            remoteStream.addTrack(track);
+          });
+          btnRecord.disabled = false; // 相手が映ったら録画可能に
+        };
+
+        // 2. 発信 (Offerの作成)
+        btnCall.onclick = async () => {
+          statusText.textContent = '発信中... 相手の応答を待っています';
+          btnCall.disabled = true;
+          btnAnswer.disabled = true;
+          btnHangup.disabled = false;
+
+          // 古い接続情報を消す
+          await remove(callDoc);
+
+          // ネットワークの経路(ICE)を探してFirebaseに保存
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              push(offerCandidatesRef, event.candidate.toJSON());
+            }
+          };
+
+          const offerDescription = await pc.createOffer();
+          await pc.setLocalDescription(offerDescription);
+
+          const offer = {
+            sdp: offerDescription.sdp,
+            type: offerDescription.type,
+          };
+          await set(ref(db, 'calls/private_room/offer'), offer);
+
+          // 相手が応答(Answer)を書き込んだら受け取る
+          onValue(ref(db, 'calls/private_room/answer'), (snapshot) => {
+            const answer = snapshot.val();
+            if (answer && !pc.currentRemoteDescription) {
+              const answerDescription = new RTCSessionDescription(answer);
+              pc.setRemoteDescription(answerDescription);
+              statusText.textContent = '通話中 🟢';
+            }
+          });
+
+          // 相手のネットワーク経路(ICE)を受け取る
+          onChildAdded(answerCandidatesRef, (data) => {
+            const candidate = new RTCIceCandidate(data.val());
+            pc.addIceCandidate(candidate);
+          });
+        };
+
+        // 3. 応答 (Answerの作成)
+        btnAnswer.onclick = async () => {
+          statusText.textContent = '接続中...';
+          btnCall.disabled = true;
+          btnAnswer.disabled = true;
+          btnHangup.disabled = false;
+
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              push(answerCandidatesRef, event.candidate.toJSON());
+            }
+          };
+
+          // Firebaseから相手のOfferを取得
+          const snapshot = await get(callDoc);
+          const callData = snapshot.val();
+          const offerDescription = callData.offer;
+          await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+
+          const answerDescription = await pc.createAnswer();
+          await pc.setLocalDescription(answerDescription);
+
+          const answer = {
+            type: answerDescription.type,
+            sdp: answerDescription.sdp,
+          };
+          await set(ref(db, 'calls/private_room/answer'), answer);
+
+          // 相手のネットワーク経路(ICE)を受け取る
+          onChildAdded(offerCandidatesRef, (data) => {
+            const candidate = new RTCIceCandidate(data.val());
+            pc.addIceCandidate(candidate);
+          });
+          
+          statusText.textContent = '通話中 🟢';
+        };
+
+        // 4. 切断
+        btnHangup.onclick = async () => {
+          statusText.textContent = '切断しました';
+          pc.close();
+          await remove(callDoc);
+          location.reload(); // リセットして状態をきれいにする
+        };
+
+        // 5. 録音・録画機能 (ブラウザ標準のMediaRecorder)
+        btnRecord.onclick = () => {
+          if (mediaRecorder && mediaRecorder.state === 'recording') {
+            // 録画停止
+            mediaRecorder.stop();
+            btnRecord.textContent = '🔴 録画開始';
+            btnRecord.classList.remove('btn-danger');
+            btnRecord.style.background = '#f59e0b';
+            statusText.textContent = '録画を保存しました';
+          } else {
+            // 録画開始 (相手の映像・音声を録画します)
+            recordedChunks = [];
+            // 通信の都合上、相手のストリーム(remoteStream)を録画対象にするのが最も安定します
+            mediaRecorder = new MediaRecorder(remoteStream, { mimeType: 'video/webm' });
+            
+            mediaRecorder.ondataavailable = function(e) {
+              if (e.data.size > 0) {
+                recordedChunks.push(e.data);
+              }
+            };
+            
+            mediaRecorder.onstop = function() {
+              // 録画ファイルをダウンロードさせる処理
+              const blob = new Blob(recordedChunks, { type: 'video/webm' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              document.body.appendChild(a);
+              a.style = 'display: none';
+              a.href = url;
+              a.download = 'video_call_' + Date.now() + '.webm';
+              a.click();
+              window.URL.revokeObjectURL(url);
+            };
+
+            mediaRecorder.start();
+            btnRecord.textContent = '⏹️ 録画停止＆保存';
+            btnRecord.style.background = 'var(--danger)';
+            statusText.textContent = '🔴 通話を録画中です...';
+          }
+        };
+
+        // 起動時にカメラとマイクをセットアップ
+        setupMedia();
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+
 // --- API (これまで通り) ---
 const getMeta = (htmlText, prop) => {
   const reg = new RegExp(`<meta(?:\\s+[^>]*?)?(?:property|name)=["']${prop}["']\\s+content=["']([^"']*)["']`, 'i');
@@ -790,12 +1072,10 @@ app.get('/api/ogp', async c => {
   }
 });
 
-// ★ 追加: FirebaseからD1へのお引っ越しを受け取る専用API
 app.post('/api/chat/archive', async c => {
   const { messages } = await c.req.json();
   if (!messages || messages.length === 0) return c.json({ success: true });
   
-  // 送られてきた古いメッセージをD1にまとめて保存
   const stmt = c.env.DB.prepare('INSERT OR IGNORE INTO private_chats (id, sender, text, timestamp) VALUES (?, ?, ?, ?)');
   const batch = messages.map(m => stmt.bind(m.id, m.sender, m.text, m.timestamp));
   await c.env.DB.batch(batch);
@@ -839,147 +1119,5 @@ app.post('/api/gemini', async (c) => {
   } catch (e) { return c.json({ response: "エラー: " + e.message }); }
 });
 app.post('/api/gemini/clear', async c => { await c.env.DB.prepare('DELETE FROM chats').run(); return c.redirect('/'); });
-
-// --- Diary ---
-app.get('/diary', async c => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC').all();
-  return c.html(html`
-    <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>日記一覧</title></head>
-    <body style="font-family:sans-serif; background:#f8fafc; margin:0; padding:0;">
-      <header class="navbar" style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; padding: 0.8rem 1.5rem; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
-        <div class="nav-brand" style="font-size: 1.2rem; font-weight: 900;">My Dashboard</div>
-        <div class="nav-links" style="display: flex; gap: 15px;">
-          <a href="/" style="font-weight: 600; color: #64748b; text-decoration: none;">Home</a>
-          <a href="/diary" style="font-weight: 600; color: #3b82f6; text-decoration: none;">Diary</a>
-          <a href="/chat" style="font-weight: 600; color: #64748b; text-decoration: none;">Chat</a>
-        </div>
-      </header>
-
-      <div style="max-width:600px; margin: 20px auto; padding: 0 15px; display:flex; flex-direction:column; gap:15px;">
-        <h2 style="color:#0f172a; margin-top:0;">全ての記録</h2>
-        ${results.map(n => html`
-          <div style="background:#fff; padding:15px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-              <span style="color:#64748b; font-size:0.9rem;">
-                ${new Date(n.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
-                ${n.location_name ? html`<span style="color:#3b82f6; margin-left:8px; font-weight:bold;">📍 ${n.location_name}</span>` : ''}
-              </span>
-              <div style="display:flex; gap:10px;"><a href="/diary/edit/${n.id}" style="color:#3b82f6; font-size:0.9rem; text-decoration:none;">編集</a><form method="POST" action="/diary/delete" style="margin:0;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${n.id}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:0.9rem; cursor:pointer; text-decoration:underline; padding:0;">削除</button></form></div>
-            </div>
-            <p class="diary-text" style="margin:0; white-space:pre-wrap; line-height:1.5;">${n.content}</p>
-            ${n.image_url ? html`<img src="${n.image_url}" style="margin-top:10px; border-radius:8px; max-width:100%;">` : ''}
-          </div>
-        `)}
-      </div>
-
-      <script>
-        document.querySelectorAll('.diary-text').forEach(el => {
-          const text = el.textContent;
-          const urlRegex = /(https?:\\/\\/[^\\s]+)/g;
-          if (urlRegex.test(text)) {
-            el.innerHTML = text.replace(urlRegex, '<a href="$1" class="auto-link" target="_blank" style="color:#3b82f6; word-break:break-all;">$1</a>');
-            el.querySelectorAll('.auto-link').forEach(async a => {
-              const url = a.href;
-              const card = document.createElement('a');
-              card.href = url; card.target = "_blank";
-              card.style.cssText = "display:flex; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; margin-top:10px; text-decoration:none; color:#0f172a; background:#f8fafc; height:80px; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:0.2s;";
-              card.innerHTML = '<div style="padding:10px; font-size:0.8rem; color:#64748b;">🔗 リンク情報を読み込み中...</div>';
-              a.parentNode.insertBefore(card, a.nextSibling);
-              try {
-                const res = await fetch('/api/ogp?url=' + encodeURIComponent(url));
-                const ogp = await res.json();
-                if (ogp.title) {
-                  card.innerHTML = (ogp.image ? '<img src="' + ogp.image + '" style="width:80px; height:100%; object-fit:cover; border-right:1px solid #e2e8f0;">' : '<div style="width:80px; height:100%; background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:24px;">🔗</div>') + 
-                    '<div style="padding:8px 10px; display:flex; flex-direction:column; justify-content:center; flex:1; overflow:hidden;">' +
-                      '<div style="font-weight:bold; font-size:0.85rem; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">' + ogp.title + '</div>' +
-                      '<div style="font-size:0.75rem; color:#64748b; margin-top:4px; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;">' + (ogp.description || new URL(url).hostname) + '</div>' +
-                    '</div>';
-                } else { card.remove(); }
-              } catch(e) { card.remove(); }
-            });
-          }
-        });
-      </script>
-    </body></html>
-  `);
-});
-
-app.post('/diary/delete', async c => { const b = await c.req.parseBody(); await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(b['id']).run(); if(b['date']) return c.redirect('/?date=' + b['date']); return c.redirect('/diary'); });
-
-app.get('/diary/edit/:id', async c => {
-  const note = await c.env.DB.prepare('SELECT * FROM notes WHERE id = ?').bind(c.req.param('id')).first();
-  return c.html(html`
-    <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>編集</title></head>
-    <body style="font-family:sans-serif; background:#f8fafc; margin:0; padding:20px;">
-      <div style="max-width:600px; background:#fff; padding:20px; border-radius:12px;">
-        <h2 style="margin-top:0;">記録を編集</h2>
-        <form method="POST" action="/diary/edit/${note.id}" style="display:flex; flex-direction:column; gap:15px;"><textarea name="content" rows="6" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0;">${note.content}</textarea><div style="display:flex; gap:10px;"><button type="submit" style="flex:1; padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold;">更新する</button><a href="/diary" style="padding:12px 20px; background:#e2e8f0; color:#0f172a; border-radius:8px; text-decoration:none; font-weight:bold;">キャンセル</a></div></form>
-      </div>
-    </body></html>
-  `);
-});
-app.post('/diary/edit/:id', async c => { await c.env.DB.prepare('UPDATE notes SET content = ? WHERE id = ?').bind((await c.req.parseBody())['content'], c.req.param('id')).run(); return c.redirect('/diary'); });
-
-app.get('/diary/post', c => {
-  return c.html(html`
-    <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>新規投稿</title></head>
-    <body style="font-family:sans-serif; background:#f8fafc; margin:0; padding:20px;">
-      <a href="/" style="color:#3b82f6; text-decoration:none; font-weight:bold;">← ホームへ戻る</a>
-      <div style="max-width:600px; background:#fff; padding:20px; border-radius:12px; margin-top:15px;">
-        <h2 style="margin-top:0;">新しい記録を追加</h2>
-        <form method="POST" action="/diary/post" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:15px;">
-          <textarea name="content" rows="6" placeholder="いまどうしてる？（URLを貼るとリンクカードになります）" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0; font-size:16px;"></textarea>
-          <input type="file" name="image" accept="image/*">
-          <input type="hidden" name="lat" id="lat"><input type="hidden" name="lng" id="lng">
-          <input type="hidden" name="location_name" id="location_name">
-          <button type="submit" id="submit-btn" style="padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold; font-size:16px;">保存する</button>
-        </form>
-        <div id="gps-status" style="font-size:0.8rem; color:#64748b; margin-top:15px; font-weight:bold;">📍 位置情報を取得中...</div>
-      </div>
-      <script>
-        if(navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(async pos => {
-            const lat = pos.coords.latitude;
-            const lng = pos.coords.longitude;
-            document.getElementById('lat').value = lat;
-            document.getElementById('lng').value = lng;
-            document.getElementById('gps-status').textContent = '📍 場所の名前を特定中...';
-            try {
-              const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);
-              const data = await res.json();
-              if(data.address) {
-                const locName = (data.address.province || data.address.state || '') + (data.address.city || data.address.town || data.address.village || '') + (data.address.suburb || data.address.quarter || '');
-                if(locName) {
-                   document.getElementById('location_name').value = locName;
-                   document.getElementById('gps-status').innerHTML = '📍 <b>' + locName + '</b> の位置情報を記録します';
-                   document.getElementById('gps-status').style.color = '#3b82f6';
-                   return;
-                }
-              }
-            } catch(e) {}
-            document.getElementById('gps-status').textContent = '📍 現在の位置情報を記録します';
-            document.getElementById('gps-status').style.color = '#3b82f6';
-          }, () => { document.getElementById('gps-status').textContent = '⚠️ 位置情報が取得できませんでした'; }, {enableHighAccuracy: true});
-        }
-      </script>
-    </body></html>
-  `);
-});
-
-app.post('/diary/post', async c => {
-  const b = await c.req.parseBody(); let img = null;
-  if (b['image'] instanceof File && b['image'].size > 0) { const fn = `${Date.now()}-${b['image'].name}`; await c.env.BUCKET.put(fn, await b['image'].arrayBuffer(), { httpMetadata: { contentType: b['image'].type } }); img = `/images/${fn}`; }
-  const lat = b['lat'] ? parseFloat(b['lat']) : null; 
-  const lng = b['lng'] ? parseFloat(b['lng']) : null;
-  const locName = b['location_name'] || null;
-  await c.env.DB.prepare('INSERT INTO notes (content, image_url, lat, lng, location_name, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(b['content'], img, lat, lng, locName, Date.now()).run(); 
-  return c.redirect('/');
-});
-
-app.get('/images/:key', async c => {
-  const obj = await c.env.BUCKET.get(c.req.param('key'));
-  if (!obj) return c.text('Not Found', 404);
-  const h = new Headers(); obj.writeHttpMetadata(h); h.set('etag', obj.httpEtag); return new Response(obj.body, { headers: h });
-});
 
 export const onRequest = handle(app);
