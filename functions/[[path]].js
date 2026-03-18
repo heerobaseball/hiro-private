@@ -19,7 +19,6 @@ app.get('/', async (c) => {
   const tDate = c.req.query('date') || `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const start = new Date(`${tDate}T00:00:00+09:00`).getTime(), end = new Date(`${tDate}T23:59:59+09:00`).getTime();
   
-  // ★ ToDoとMemoはFirebaseに任せるため、D1からは取得しない（超軽量化）
   const [notes, chats, checkins, mapNotes] = await Promise.all([ 
     c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 10').all(), 
     c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 30').all(), 
@@ -97,7 +96,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // --- 時計・天気・ニュース・マップ等の既存機能 ---
     function updateClock(){const n=new Date();document.getElementById('time-display').textContent=n.toLocaleTimeString('ja-JP',{hour12:false});document.getElementById('date-jp').textContent=new Intl.DateTimeFormat('ja-JP-u-ca-japanese',{era:'long',year:'numeric',month:'long',day:'numeric',weekday:'short'}).format(n);const old=['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];document.getElementById('koyomi-display').textContent=\`西暦\${n.getFullYear()}年 / 旧暦: \${old[n.getMonth()]}\`;} setInterval(updateClock,1000); updateClock();
     async function fetchW(lat,lng,loc){try{const r=await fetch(\`https://api.open-meteo.com/v1/forecast?latitude=\${lat}&longitude=\${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4\`);const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h=\`<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">\${ic(d.weathercode[0])}</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">\${Math.round(d.temperature_2m_max[0])}°</span> / <span style="color:#3b82f6;font-weight:bold;">\${Math.round(d.temperature_2m_min[0])}°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 \${d.precipitation_probability_max[0]}%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">\`;for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+=\`<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">\${dt.getMonth()+1}/\${dt.getDate()}</div><div style="font-size:1.5rem;margin:4px 0;">\${ic(d.weathercode[i])}</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">\${Math.round(d.temperature_2m_max[i])}°</span> <span style="color:#3b82f6;">\${Math.round(d.temperature_2m_min[i])}°</span></div></div>\`;}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent=\`天気予報 (\${loc})\`;}catch(e){}}
     if(navigator.geolocation)navigator.geolocation.getCurrentPosition(async p=>{let loc='現在地';try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude);const d=await r.json();if(d.address)loc=d.address.city||d.address.town||d.address.village||d.address.suburb||'現在地';}catch(e){} fetchW(p.coords.latitude,p.coords.longitude,loc);}, ()=>fetchW(35.8617,139.6455,'埼玉')); else fetchW(35.8617,139.6455,'埼玉');
@@ -126,10 +124,15 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       Object.entries(data).reverse().forEach(([id, m]) => {
         const div = document.createElement('div');
         div.style.cssText = "background:#f8fafc; border:1px solid var(--brd); border-radius:8px; padding:10px; position:relative; margin-bottom:8px;";
-        div.innerHTML = \`<textarea style="width:100%; border:none; background:transparent; resize:none; outline:none; font-family:inherit;">\${m.content}</textarea><button class="del-memo" style="position:absolute; top:-6px; right:-6px; background:#ef4444; color:white; border:none; border-radius:50%; width:22px; height:22px; cursor:pointer;">×</button>\`;
+        div.innerHTML = \`<textarea style="width:100%; border:none; background:transparent; resize:none; outline:none; font-family:inherit; overflow:hidden;" rows="1">\${m.content || ''}</textarea><button class="del-memo" style="position:absolute; top:-6px; right:-6px; background:#ef4444; color:white; border:none; border-radius:50%; width:22px; height:22px; cursor:pointer;">×</button>\`;
+        
+        // ★修正: 先に画面に追加してから高さを計算する
+        memoList.appendChild(div);
         
         const ta = div.querySelector('textarea');
+        ta.style.height = 'auto';
         ta.style.height = ta.scrollHeight + 'px';
+        
         let to;
         ta.addEventListener('input', e => {
           e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px';
@@ -137,7 +140,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
         });
         
         div.querySelector('.del-memo').onclick = () => remove(ref(db, 'memos/' + id));
-        memoList.appendChild(div);
       });
     });
     
