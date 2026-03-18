@@ -24,7 +24,38 @@ export function setupDiary(app) {
   app.post('/diary/delete', async c => { const b = await c.req.parseBody(); await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(b['id']).run(); return c.redirect(b['date'] ? '/?date=' + b['date'] : '/diary'); });
   app.get('/diary/edit/:id', async c => { const n = await c.env.DB.prepare('SELECT * FROM notes WHERE id = ?').bind(c.req.param('id')).first(); return c.html(html`<!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>編集</title></head><body style="font-family:sans-serif; background:#f8fafc; padding:20px;"><div style="max-width:600px; background:#fff; padding:20px; border-radius:12px;"><h2 style="margin-top:0;">編集</h2><form method="POST" action="/diary/edit/${n.id}" style="display:flex; flex-direction:column; gap:15px;"><textarea name="content" rows="6" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0;">${n.content}</textarea><div style="display:flex; gap:10px;"><button type="submit" style="flex:1; padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold;">更新する</button><a href="/diary" style="padding:12px 20px; background:#e2e8f0; color:#0f172a; border-radius:8px; text-decoration:none; font-weight:bold;">キャンセル</a></div></form></div></body></html>`); });
   app.post('/diary/edit/:id', async c => { await c.env.DB.prepare('UPDATE notes SET content = ? WHERE id = ?').bind((await c.req.parseBody())['content'], c.req.param('id')).run(); return c.redirect('/diary'); });
-  app.get('/diary/post', c => c.html(html`<!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>新規投稿</title></head><body style="font-family:sans-serif; background:#f8fafc; padding:20px;"><a href="/" style="color:#3b82f6; text-decoration:none; font-weight:bold;">← ホーム</a><div style="max-width:600px; background:#fff; padding:20px; border-radius:12px; margin-top:15px;"><h2 style="margin-top:0;">新規追加</h2><form method="POST" action="/diary/post" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:15px;"><textarea name="content" rows="6" placeholder="いまどうしてる？" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0;"></textarea><input type="file" name="image" accept="image/*"><input type="hidden" name="lat" id="lat"><input type="hidden" name="lng" id="lng"><input type="hidden" name="location_name" id="location_name"><button type="submit" style="padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold;">保存する</button></form><div id="gs" style="font-size:0.8rem; color:#64748b; margin-top:15px; font-weight:bold;">📍 位置情報を取得中...</div></div><script>if(navigator.geolocation){navigator.geolocation.getCurrentPosition(async p=>{const lat=p.coords.latitude,lng=p.coords.longitude;document.getElementById('lat').value=lat;document.getElementById('lng').value=lng;try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);const d=await r.json();if(d.address){const l=(d.address.province||'')+(d.address.city||d.address.town||d.address.village||'')+(d.address.suburb||d.address.quarter||'');if(l){document.getElementById('location_name').value=l;document.getElementById('gs').innerHTML='📍 <b>'+l+'</b> の位置情報を記録します';document.getElementById('gs').style.color='#3b82f6';return;}}}catch(e){}document.getElementById('gs').textContent='📍 現在地を記録します';document.getElementById('gs').style.color='#3b82f6';},()=>{document.getElementById('gs').textContent='⚠️ 位置情報取得失敗';},{enableHighAccuracy:true});}</script></body></html>`));
-  app.post('/diary/post', async c => { const b = await c.req.parseBody(); let img = null; if (b['image'] instanceof File && b['image'].size > 0) { const fn = `${Date.now()}-${b['image'].name}`; await c.env.BUCKET.put(fn, await b['image'].arrayBuffer(), { httpMetadata: { contentType: b['image'].type } }); img = `/images/${fn}`; } await c.env.DB.prepare('INSERT INTO notes (content, image_url, lat, lng, location_name, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(b['content'], img, b['lat']?parseFloat(b['lat']):null, b['lng']?parseFloat(b['lng']):null, b['location_name']||null, Date.now()).run(); return c.redirect('/'); });
-  app.get('/images/:key', async c => { const o = await c.env.BUCKET.get(c.req.param('key')); if (!o) return c.text('Not Found', 404); const h = new Headers(); o.writeHttpMetadata(h); h.set('etag', o.httpEtag); return new Response(o.body, { headers: h }); });
+
+  // ★ CloudflareのR2へアップロードするフォームに戻しました
+  app.get('/diary/post', c => c.html(html`
+    <!DOCTYPE html><html lang="ja"><head><meta name="viewport" content="width=device-width"><title>新規投稿</title></head>
+    <body style="font-family:sans-serif; background:#f8fafc; padding:20px;">
+      <a href="/" style="color:#3b82f6; text-decoration:none; font-weight:bold;">← ホーム</a>
+      <div style="max-width:600px; background:#fff; padding:20px; border-radius:12px; margin-top:15px;">
+        <h2 style="margin-top:0;">新規追加</h2>
+        <form method="POST" action="/api/diary/post" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:15px;">
+          <textarea name="content" rows="6" placeholder="いまどうしてる？" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0; font-family:inherit;"></textarea>
+          <input type="file" name="image" accept="image/*">
+          <input type="hidden" name="lat" id="lat"><input type="hidden" name="lng" id="lng">
+          <input type="hidden" name="location_name" id="location_name">
+          <button type="submit" id="submit-btn" style="padding:12px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">保存する</button>
+        </form>
+        <div id="gs" style="font-size:0.8rem; color:#64748b; margin-top:15px; font-weight:bold;">📍 位置情報を取得中...</div>
+      </div>
+      
+      <script>
+        if(navigator.geolocation){
+          navigator.geolocation.getCurrentPosition(async p=>{
+            document.getElementById('lat').value=p.coords.latitude; document.getElementById('lng').value=p.coords.longitude;
+            try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude);const d=await r.json();
+            if(d.address){const l=(d.address.province||'')+(d.address.city||d.address.town||d.address.village||'')+(d.address.suburb||d.address.quarter||'');if(l){document.getElementById('location_name').value=l;document.getElementById('gs').innerHTML='📍 <b>'+l+'</b> の位置情報を記録します';document.getElementById('gs').style.color='#3b82f6';return;}}}catch(e){}
+            document.getElementById('gs').textContent='📍 現在地を記録します';document.getElementById('gs').style.color='#3b82f6';
+          },()=>{document.getElementById('gs').textContent='⚠️ 位置情報取得失敗';},{enableHighAccuracy:true});
+        }
+        document.querySelector('form').addEventListener('submit', function() {
+          document.getElementById('submit-btn').textContent = '保存中...';
+          document.getElementById('submit-btn').disabled = true;
+        });
+      </script>
+    </body></html>
+  `));
 }
