@@ -1,24 +1,33 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
 import { html, raw } from 'hono/html';
+
+// 分割した外部ファイルを読み込む
 import { setupApi } from '../src/api.js';
 import { setupTools } from '../src/tools.js';
 import { setupDiary } from '../src/diary.js';
 
 const app = new Hono();
-setupApi(app); setupTools(app); setupDiary(app);
 
+// 各機能のセットアップを実行
+setupApi(app); 
+setupTools(app); 
+setupDiary(app);
+
+// --- PWA設定・チェックイン画面 ---
 app.get('/manifest.json', c => c.json({ name: "My Dashboard", short_name: "Dashboard", start_url: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#3b82f6", icons: [{ src: "/icon.svg", sizes: "512x512", type: "image/svg+xml" }], shortcuts: [{ name: "📍 チェックイン", short_name: "チェックイン", url: "/checkin", icons: [{ src: "/icon.svg", sizes: "192x192" }] }] }));
 app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
 app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
 
 app.get('/checkin', c => c.html(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><meta name="theme-color" content="#3b82f6"><title>Check-in</title></head><body style="background:#f8fafc; color:#0f172a; text-align:center; padding-top:100px; font-family:sans-serif;"><h2 id="msg">📍 GPSで現在地を取得中...</h2><script>if(!navigator.geolocation) { alert('GPS非対応です'); window.location.href='/'; } navigator.geolocation.getCurrentPosition(async pos => { document.getElementById('msg').textContent = '📍 場所を特定中...'; const lat = pos.coords.latitude, lng = pos.coords.longitude; let locName = null; try { const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng); const data = await res.json(); if(data.address) locName = (data.address.province || data.address.state || '') + (data.address.city || data.address.town || data.address.village || '') + (data.address.suburb || data.address.quarter || ''); } catch(e) {} document.getElementById('msg').textContent = '💾 データベースに記録中...'; await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat: lat, lng: lng, location_name: locName})}); window.location.href = '/'; }, () => { alert('位置情報の取得に失敗しました。'); window.location.href='/'; }, {enableHighAccuracy: true});</script></body></html>`));
 
+// --- ダッシュボード（トップページ） ---
 app.get('/', async (c) => {
   const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
   const tDate = c.req.query('date') || `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const start = new Date(`${tDate}T00:00:00+09:00`).getTime(), end = new Date(`${tDate}T23:59:59+09:00`).getTime();
   
+  // D1から取得（※ToDoとメモはFirebaseでリアルタイム取得するためここからは除外）
   const [notes, chats, checkins, mapNotes] = await Promise.all([ 
     c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 10').all(), 
     c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 30').all(), 
@@ -96,6 +105,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
+    // --- 既存のフロントエンド機能（時計、天気、ニュース非同期取得など） ---
     function updateClock(){const n=new Date();document.getElementById('time-display').textContent=n.toLocaleTimeString('ja-JP',{hour12:false});document.getElementById('date-jp').textContent=new Intl.DateTimeFormat('ja-JP-u-ca-japanese',{era:'long',year:'numeric',month:'long',day:'numeric',weekday:'short'}).format(n);const old=['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];document.getElementById('koyomi-display').textContent=\`西暦\${n.getFullYear()}年 / 旧暦: \${old[n.getMonth()]}\`;} setInterval(updateClock,1000); updateClock();
     async function fetchW(lat,lng,loc){try{const r=await fetch(\`https://api.open-meteo.com/v1/forecast?latitude=\${lat}&longitude=\${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4\`);const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h=\`<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">\${ic(d.weathercode[0])}</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">\${Math.round(d.temperature_2m_max[0])}°</span> / <span style="color:#3b82f6;font-weight:bold;">\${Math.round(d.temperature_2m_min[0])}°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 \${d.precipitation_probability_max[0]}%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">\`;for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+=\`<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">\${dt.getMonth()+1}/\${dt.getDate()}</div><div style="font-size:1.5rem;margin:4px 0;">\${ic(d.weathercode[i])}</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">\${Math.round(d.temperature_2m_max[i])}°</span> <span style="color:#3b82f6;">\${Math.round(d.temperature_2m_min[i])}°</span></div></div>\`;}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent=\`天気予報 (\${loc})\`;}catch(e){}}
     if(navigator.geolocation)navigator.geolocation.getCurrentPosition(async p=>{let loc='現在地';try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude);const d=await r.json();if(d.address)loc=d.address.city||d.address.town||d.address.village||d.address.suburb||'現在地';}catch(e){} fetchW(p.coords.latitude,p.coords.longitude,loc);}, ()=>fetchW(35.8617,139.6455,'埼玉')); else fetchW(35.8617,139.6455,'埼玉');
@@ -115,7 +125,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     const memoRef = ref(db, 'memos');
     const todoRef = ref(db, 'todos');
 
-    // 1. メモのリアルタイム処理
+    // 1. メモ
     const memoList = document.getElementById('fb-memo-list');
     onValue(memoRef, (snapshot) => {
       memoList.innerHTML = '';
@@ -126,31 +136,25 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
         div.style.cssText = "background:#f8fafc; border:1px solid var(--brd); border-radius:8px; padding:10px; position:relative; margin-bottom:8px;";
         div.innerHTML = \`<textarea style="width:100%; border:none; background:transparent; resize:none; outline:none; font-family:inherit; overflow:hidden;" rows="1">\${m.content || ''}</textarea><button class="del-memo" style="position:absolute; top:-6px; right:-6px; background:#ef4444; color:white; border:none; border-radius:50%; width:22px; height:22px; cursor:pointer;">×</button>\`;
         
-        // ★修正: 先に画面に追加してから高さを計算する
-        memoList.appendChild(div);
-        
+        memoList.appendChild(div); // 先に画面に追加して高さを確保
         const ta = div.querySelector('textarea');
-        ta.style.height = 'auto';
-        ta.style.height = ta.scrollHeight + 'px';
+        ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
         
         let to;
         ta.addEventListener('input', e => {
           e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px';
           clearTimeout(to); to = setTimeout(() => update(ref(db, 'memos/' + id), { content: e.target.value }), 800);
         });
-        
         div.querySelector('.del-memo').onclick = () => remove(ref(db, 'memos/' + id));
       });
     });
     
     document.getElementById('fb-memo-form').onsubmit = (e) => {
-      e.preventDefault();
-      const inp = document.getElementById('fb-memo-input');
-      push(memoRef, { content: inp.value, created_at: Date.now() });
-      inp.value = '';
+      e.preventDefault(); const inp = document.getElementById('fb-memo-input');
+      push(memoRef, { content: inp.value, created_at: Date.now() }); inp.value = '';
     };
 
-    // 2. ToDoのリアルタイム処理
+    // 2. ToDo
     const todoList = document.getElementById('fb-todo-list');
     onValue(todoRef, (snapshot) => {
       todoList.innerHTML = '';
@@ -174,12 +178,33 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     });
 
     document.getElementById('fb-todo-form').onsubmit = (e) => {
-      e.preventDefault();
-      const inp = document.getElementById('fb-todo-input');
-      push(todoRef, { task: inp.value, is_completed: false, created_at: Date.now() });
-      inp.value = '';
+      e.preventDefault(); const inp = document.getElementById('fb-todo-input');
+      push(todoRef, { task: inp.value, is_completed: false, created_at: Date.now() }); inp.value = '';
     };
   </script>
+
+  <script>
+    (function() {
+      // 1. アクセスログ
+      fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'PAGE_ACCESS', target: window.location.pathname + window.location.search }) }).catch(()=>{});
+      
+      // 2. 操作ログ
+      document.addEventListener('click', e => {
+        const targetEl = e.target.closest('button, a, .tab-btn');
+        if (targetEl) {
+          let targetName = targetEl.textContent.trim().substring(0, 20) || targetEl.href || targetEl.tagName;
+          fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'CLICK', target: targetName }) }).catch(()=>{});
+        }
+      }, { passive: true });
+      
+      // 3. フォーム送信ログ
+      document.addEventListener('submit', e => {
+        const formId = e.target.id || e.target.action || 'unknown_form';
+        fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'FORM_SUBMIT', target: formId }) }).catch(()=>{});
+      });
+    })();
+  </script>
+
 </body></html>
   `);
 });
