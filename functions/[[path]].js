@@ -1,20 +1,13 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
 import { html, raw } from 'hono/html';
-
-// 分割した外部ファイルを読み込む
 import { setupApi } from '../src/api.js';
 import { setupTools } from '../src/tools.js';
 import { setupDiary } from '../src/diary.js';
 
 const app = new Hono();
+setupApi(app); setupTools(app); setupDiary(app);
 
-// 各機能のセットアップを実行
-setupApi(app); 
-setupTools(app); 
-setupDiary(app);
-
-// --- PWA設定・チェックイン画面 ---
 app.get('/manifest.json', c => c.json({ name: "My Dashboard", short_name: "Dashboard", start_url: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#3b82f6", icons: [{ src: "/icon.svg", sizes: "512x512", type: "image/svg+xml" }], shortcuts: [{ name: "📍 チェックイン", short_name: "チェックイン", url: "/checkin", icons: [{ src: "/icon.svg", sizes: "192x192" }] }] }));
 app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
 app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
@@ -27,7 +20,6 @@ app.get('/', async (c) => {
   const tDate = c.req.query('date') || `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const start = new Date(`${tDate}T00:00:00+09:00`).getTime(), end = new Date(`${tDate}T23:59:59+09:00`).getTime();
   
-  // D1から取得（※ToDoとメモはFirebaseでリアルタイム取得するためここからは除外）
   const [notes, chats, checkins, mapNotes] = await Promise.all([ 
     c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 10').all(), 
     c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 30').all(), 
@@ -70,7 +62,8 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   <header class="navbar"><div class="nav-brand">My Dashboard</div><div class="nav-links"><a href="/" class="active">Home</a><a href="/diary">Diary</a><a href="/chat">Chat</a><a href="/call">Call</a><a href="/speedtest">Speed</a></div></header>
   <main><div class="container">
     <div class="card col-span-3" style="border-top: 4px solid var(--pri); justify-content:center; padding:1.2rem 2rem; align-items:center; gap:5px;">
-      <div id="date-jp" style="font-size:1.1rem; font-weight:700;">--年--月--日</div><div id="time-display" style="font-size:3.5rem; font-weight:900; line-height:1; letter-spacing:-2px;">--:--</div><div id="koyomi-display" style="font-size:0.8rem; color:#0369a1; background:#e0f2fe; padding:4px 12px; border-radius:20px; font-weight:600;">読込中...</div>
+      <div id="date-jp" style="font-size:1.1rem; font-weight:700;">--年--月--日</div><div id="time-display" style="font-size:3.5rem; font-weight:900; line-height:1; letter-spacing:-2px;">--:--</div>
+      <div id="koyomi-display" style="font-size:0.8rem; color:#0369a1; background:#e0f2fe; padding:4px 12px; border-radius:20px; font-weight:600;">⌚ APIから正確な時刻を取得中...</div>
     </div>
     
     <div class="card col-span-1"><div class="card-header"><span class="card-icon">⛅</span> <span id="weather-title">天気予報</span></div><div id="weather-widget" style="text-align:center; padding:20px; color:var(--mut);">読込中...</div></div>
@@ -105,10 +98,66 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // --- 既存のフロントエンド機能（時計、天気、ニュース非同期取得など） ---
-    function updateClock(){const n=new Date();document.getElementById('time-display').textContent=n.toLocaleTimeString('ja-JP',{hour12:false});document.getElementById('date-jp').textContent=new Intl.DateTimeFormat('ja-JP-u-ca-japanese',{era:'long',year:'numeric',month:'long',day:'numeric',weekday:'short'}).format(n);const old=['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];document.getElementById('koyomi-display').textContent=\`西暦\${n.getFullYear()}年 / 旧暦: \${old[n.getMonth()]}\`;} setInterval(updateClock,1000); updateClock();
+    // --- ★ 外部APIによる正確な時刻同期ロジック ---
+    let timeOffsetMs = 0; // 端末と外部APIの時刻のズレ（ミリ秒）
+    
+    // GPS情報からAPIを叩き、正確な時刻との「ズレ」を計算する
+    async function syncTimeAPI(lat, lng) {
+      try {
+        const res = await fetch(\`https://timeapi.io/api/Time/current/coordinate?latitude=\${lat}&longitude=\${lng}\`);
+        const d = await res.json();
+        // APIから返ってきた「現地時間」をローカルでDate化
+        const apiLocalTime = new Date(d.year, d.month - 1, d.day, d.hour, d.minute, d.seconds, d.milliSeconds).getTime();
+        
+        // 端末時計とのズレ（ミリ秒）を算出
+        timeOffsetMs = apiLocalTime - Date.now();
+        
+        // 同期完了のサインをUIに表示
+        const old = ['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];
+        const n = new Date(Date.now() + timeOffsetMs);
+        document.getElementById('koyomi-display').innerHTML = \`✅ GPS同期済 | 西暦\${n.getFullYear()}年 / 旧暦: \${old[n.getMonth()]}\`;
+        
+        updateClock(); // オフセット反映後、即座に時計を更新
+      } catch(e) {
+        document.getElementById('koyomi-display').textContent = "⚠️ 時刻同期失敗（ローカル表示中）";
+      }
+    }
+
+    // 時計を毎秒更新する処理（ズレ補正付き）
+    function updateClock(){
+      // 端末の現在時刻に、APIとのズレ（timeOffsetMs）を足し合わせた「超正確な時間」
+      const n = new Date(Date.now() + timeOffsetMs);
+      
+      document.getElementById('time-display').textContent = n.toLocaleTimeString('ja-JP',{hour12:false});
+      document.getElementById('date-jp').textContent = new Intl.DateTimeFormat('ja-JP-u-ca-japanese',{era:'long',year:'numeric',month:'long',day:'numeric',weekday:'short'}).format(n);
+    }
+    
+    setInterval(updateClock, 1000); 
+    updateClock(); // 初回起動
+
+    // --- その他フロント機能 ---
     async function fetchW(lat,lng,loc){try{const r=await fetch(\`https://api.open-meteo.com/v1/forecast?latitude=\${lat}&longitude=\${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4\`);const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h=\`<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">\${ic(d.weathercode[0])}</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">\${Math.round(d.temperature_2m_max[0])}°</span> / <span style="color:#3b82f6;font-weight:bold;">\${Math.round(d.temperature_2m_min[0])}°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 \${d.precipitation_probability_max[0]}%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">\`;for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+=\`<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">\${dt.getMonth()+1}/\${dt.getDate()}</div><div style="font-size:1.5rem;margin:4px 0;">\${ic(d.weathercode[i])}</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">\${Math.round(d.temperature_2m_max[i])}°</span> <span style="color:#3b82f6;">\${Math.round(d.temperature_2m_min[i])}°</span></div></div>\`;}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent=\`天気予報 (\${loc})\`;}catch(e){}}
-    if(navigator.geolocation)navigator.geolocation.getCurrentPosition(async p=>{let loc='現在地';try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude);const d=await r.json();if(d.address)loc=d.address.city||d.address.town||d.address.village||d.address.suburb||'現在地';}catch(e){} fetchW(p.coords.latitude,p.coords.longitude,loc);}, ()=>fetchW(35.8617,139.6455,'埼玉')); else fetchW(35.8617,139.6455,'埼玉');
+    
+    // 位置情報を取得し、天気と「時刻同期」を実行！
+    if(navigator.geolocation){
+      navigator.geolocation.getCurrentPosition(async p=>{
+        let loc='現在地';
+        try{
+          const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude);
+          const d=await r.json();
+          if(d.address)loc=d.address.city||d.address.town||d.address.village||d.address.suburb||'現在地';
+        }catch(e){}
+        fetchW(p.coords.latitude,p.coords.longitude,loc);
+        syncTimeAPI(p.coords.latitude, p.coords.longitude); // ★ ここで時刻同期APIを呼ぶ！
+      }, ()=>{
+        fetchW(35.8617,139.6455,'埼玉');
+        syncTimeAPI(35.8617,139.6455);
+      });
+    } else {
+      fetchW(35.8617,139.6455,'埼玉');
+      syncTimeAPI(35.8617,139.6455);
+    }
+
     document.getElementById('news-tabs').addEventListener('click', e => { if(e.target.classList.contains('tab-btn')){ document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.news-list').forEach(x=>x.classList.remove('active-tab')); e.target.classList.add('active'); const t = document.getElementById(e.target.dataset.target); if(t) t.classList.add('active-tab'); } });
     async function loadNews() { try { const r = await fetch('/api/news'); const d = await r.json(); const rt = (items, id, act) => \`<div id="\${id}" class="news-list \${act?'active-tab':''}">\${items.map(i=>\`<a href="\${i.link}" target="_blank" class="news-item">\${i.imgUrl?\`<img src="\${i.imgUrl}" class="news-thumb" loading="lazy">\`:\`<div class="news-thumb no-img">No Img</div>\`}<div class="news-text"><div class="news-title">\${i.title.replace(' - '+i.source,'')}</div><div><span class="source-tag">\${i.source}</span></div></div></a>\`).join('')}</div>\`; document.getElementById('news-list-container').innerHTML = rt(d.top,'tab-top',true) + rt(d.biz,'tab-biz',false) + rt(d.market,'tab-market',false) + rt(d.it,'tab-it',false); } catch(e){ document.getElementById('news-list-container').innerHTML = '<div style="text-align:center; padding:20px; color:red;">取得失敗</div>'; } } loadNews();
     const hDiv=document.getElementById('chat-history'); hDiv.scrollTop=hDiv.scrollHeight; let imgD=null,imgM=null; document.getElementById('chat-image-input').addEventListener('change',e=>{if(e.target.files[0]){imgM=e.target.files[0].type;const r=new FileReader();r.onload=ev=>{document.getElementById('image-preview').src=ev.target.result;document.getElementById('image-preview-container').style.display='block';imgD=ev.target.result.split(',')[1];};r.readAsDataURL(e.target.files[0]);}}); document.getElementById('clear-image').addEventListener('click',()=>{document.getElementById('chat-image-input').value='';imgD=null;document.getElementById('image-preview-container').style.display='none';}); document.getElementById('gemini-form').addEventListener('submit',async e=>{e.preventDefault();const inp=document.getElementById('gemini-input'),btn=document.getElementById('gemini-submit'),p=inp.value;hDiv.innerHTML+=\`<div class="chat-msg user-msg">\${imgD?'📷[画像] '+p:p}</div>\`;inp.value='';btn.disabled=true;hDiv.scrollTop=hDiv.scrollHeight;const pay={prompt:p,imageBase64:imgD,imageMimeType:imgM};document.getElementById('clear-image').click();try{const r=await fetch('/api/gemini',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pay)});const d=await r.json();hDiv.innerHTML+=\`<div class="chat-msg ai-msg">\${d.response}</div>\`;}catch(err){hDiv.innerHTML+=\`<div class="chat-msg ai-msg" style="color:red;">エラー</div>\`;} btn.disabled=false;hDiv.scrollTop=hDiv.scrollHeight;});
@@ -125,7 +174,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     const memoRef = ref(db, 'memos');
     const todoRef = ref(db, 'todos');
 
-    // 1. メモ
     const memoList = document.getElementById('fb-memo-list');
     onValue(memoRef, (snapshot) => {
       memoList.innerHTML = '';
@@ -136,7 +184,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
         div.style.cssText = "background:#f8fafc; border:1px solid var(--brd); border-radius:8px; padding:10px; position:relative; margin-bottom:8px;";
         div.innerHTML = \`<textarea style="width:100%; border:none; background:transparent; resize:none; outline:none; font-family:inherit; overflow:hidden;" rows="1">\${m.content || ''}</textarea><button class="del-memo" style="position:absolute; top:-6px; right:-6px; background:#ef4444; color:white; border:none; border-radius:50%; width:22px; height:22px; cursor:pointer;">×</button>\`;
         
-        memoList.appendChild(div); // 先に画面に追加して高さを確保
+        memoList.appendChild(div);
         const ta = div.querySelector('textarea');
         ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
         
@@ -154,7 +202,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       push(memoRef, { content: inp.value, created_at: Date.now() }); inp.value = '';
     };
 
-    // 2. ToDo
     const todoList = document.getElementById('fb-todo-list');
     onValue(todoRef, (snapshot) => {
       todoList.innerHTML = '';
@@ -185,10 +232,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
 
   <script>
     (function() {
-      // 1. アクセスログ
       fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'PAGE_ACCESS', target: window.location.pathname + window.location.search }) }).catch(()=>{});
-      
-      // 2. 操作ログ
       document.addEventListener('click', e => {
         const targetEl = e.target.closest('button, a, .tab-btn');
         if (targetEl) {
@@ -196,8 +240,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
           fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'CLICK', target: targetName }) }).catch(()=>{});
         }
       }, { passive: true });
-      
-      // 3. フォーム送信ログ
       document.addEventListener('submit', e => {
         const formId = e.target.id || e.target.action || 'unknown_form';
         fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'FORM_SUBMIT', target: formId }) }).catch(()=>{});
