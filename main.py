@@ -1,4 +1,5 @@
-from fastapi import FastAPI, UploadFile
+from typing import List  # ★Listを明示的にインポート
+from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from PIL import Image, ImageEnhance, ImageStat
@@ -41,9 +42,9 @@ def process_image(contents: bytes) -> bytes:
 def read_root():
     return {"status": "Smart Batch Image Optimization API is running"}
 
-# 🚀 【修正ポイント】 Python3.9以降の最新の書き方（list[UploadFile]）に変更し、= File(...) を削除
+# 🚀 【修正】厳格な型指定と File(...) の組み合わせでUIを強制的にファイル選択にする
 @app.post("/optimize")
-async def optimize_images(files: list[UploadFile]):
+async def optimize_images(files: List[UploadFile] = File(...)):
     try:
         # 【パターンA】もし1枚だけアップロードされたら、そのまま画像を返す
         if len(files) == 1:
