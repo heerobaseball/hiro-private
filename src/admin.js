@@ -2,13 +2,11 @@ import { html } from 'hono/html';
 
 export function setupAdmin(app) {
   app.get('/admin/logs', async c => {
-    // 🔒 究極の封印：Cloudflareの環境変数から鍵を取得する
-    const envSecretKey = c.env.ADMIN_LOG_KEY; // ★ 環境変数
+    // 🔒 究極の封印：監査ログ専用の鍵
+    const envSecretKey = c.env.ADMIN_LOG_KEY; 
     const queryKey = c.req.query('key');
 
-    // 環境変数が設定されていない（封印状態）、またはURLの鍵が間違っている場合は絶対にアクセス拒否
     if (!envSecretKey || queryKey !== envSecretKey) {
-      // ※閲覧を試みたこと自体も不正アクセスとして監査ログに残す
       const ip = c.req.header('CF-Connecting-IP') || 'unknown';
       try {
         const lastLog = await c.env.DB.prepare('SELECT current_hash FROM audit_logs ORDER BY id DESC LIMIT 1').first();
@@ -21,7 +19,6 @@ export function setupAdmin(app) {
       return c.html(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>System Locked</title></head><body style="background:#0f172a; color:#ef4444; text-align:center; padding-top:100px; font-family:monospace;"><h2>🔒 System Sealed.</h2><p>Admin access is currently disabled at the server level.</p></body></html>`, 401);
     }
 
-    // データベースから最新のログを取得
     const { results } = await c.env.DB.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 300').all();
 
     return c.html(html`
@@ -65,16 +62,16 @@ export function setupAdmin(app) {
               ${results.length === 0 ? html`<tr><td colspan="5" style="text-align:center; padding:30px; color:#64748b;">No logs recorded yet.</td></tr>` : ''}
               ${results.map(r => {
                 const d = new Date(r.timestamp + 9 * 3600000);
-                const dStr = \`\${String(d.getUTCMonth()+1).padStart(2,'0')}-\${String(d.getUTCDate()).padStart(2,'0')} \${String(d.getUTCHours()).padStart(2,'0')}:\${String(d.getUTCMinutes()).padStart(2,'0')}:\${String(d.getUTCSeconds()).padStart(2,'0')}\`;
-                return html\`
+                const dStr = `${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}:${String(d.getUTCSeconds()).padStart(2,'0')}`;
+                return html`
                 <tr>
-                  <td style="color:#94a3b8; white-space:nowrap;">\${dStr}</td>
-                  <td style="color:#38bdf8; font-weight:bold;">\${r.ip_address}</td>
-                  <td><span class="badge bg-\${r.action}">\${r.action}</span></td>
-                  <td style="color:#f8fafc;">\${r.target}</td>
-                  <td class="hash-text" title="Prev: \${r.previous_hash}">...\${r.current_hash ? r.current_hash.slice(-16) : 'N/A'}</td>
+                  <td style="color:#94a3b8; white-space:nowrap;">${dStr}</td>
+                  <td style="color:#38bdf8; font-weight:bold;">${r.ip_address}</td>
+                  <td><span class="badge bg-${r.action}">${r.action}</span></td>
+                  <td style="color:#f8fafc;">${r.target}</td>
+                  <td class="hash-text" title="Prev: ${r.previous_hash}">...${r.current_hash ? r.current_hash.slice(-16) : 'N/A'}</td>
                 </tr>
-                \`;
+                `;
               })}
             </tbody>
           </table>
