@@ -1,13 +1,21 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
 import { html, raw } from 'hono/html';
+
+// 外部ファイルを読み込む（※chat_adminの読み込みを削除しました）
 import { setupApi } from '../src/api.js';
 import { setupTools } from '../src/tools.js';
 import { setupDiary } from '../src/diary.js';
+import { setupAdmin } from '../src/admin.js';
 
 const app = new Hono();
-setupApi(app); setupTools(app); setupDiary(app);
 
+setupApi(app); 
+setupTools(app); 
+setupDiary(app);
+setupAdmin(app);
+
+// --- PWA設定・チェックイン画面 ---
 app.get('/manifest.json', c => c.json({ name: "My Dashboard", short_name: "Dashboard", start_url: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#3b82f6", icons: [{ src: "/icon.svg", sizes: "512x512", type: "image/svg+xml" }], shortcuts: [{ name: "📍 チェックイン", short_name: "チェックイン", url: "/checkin", icons: [{ src: "/icon.svg", sizes: "192x192" }] }] }));
 app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
 app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
@@ -59,7 +67,8 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
 </style>
 </head>
 <body>
-  <header class="navbar"><div class="nav-brand">My Dashboard</div><div class="nav-links"><a href="/" class="active">Home</a><a href="/diary">Diary</a><a href="/chat">Chat</a><a href="/call">Call</a><a href="/speedtest">Speed</a></div></header>
+  <header class="navbar"><div class="nav-brand">My Dashboard</div><div class="nav-links"><a href="/" class="active">Home</a><a href="/diary">Diary</a><a href="/speedtest">Speed</a><a href="#" target="_blank" style="color:#10b981;">Chat App ↗</a></div></header>
+  
   <main><div class="container">
     <div class="card col-span-3" style="border-top: 4px solid var(--pri); justify-content:center; padding:1.2rem 2rem; align-items:center; gap:5px;">
       <div id="date-jp" style="font-size:1.1rem; font-weight:700;">--年--月--日</div><div id="time-display" style="font-size:3.5rem; font-weight:900; line-height:1; letter-spacing:-2px;">--:--</div>
@@ -98,65 +107,38 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // --- ★ 外部APIによる正確な時刻同期ロジック ---
-    let timeOffsetMs = 0; // 端末と外部APIの時刻のズレ（ミリ秒）
-    
-    // GPS情報からAPIを叩き、正確な時刻との「ズレ」を計算する
+    // --- 外部APIによる正確な時刻同期ロジック ---
+    let timeOffsetMs = 0;
     async function syncTimeAPI(lat, lng) {
       try {
         const res = await fetch(\`https://timeapi.io/api/Time/current/coordinate?latitude=\${lat}&longitude=\${lng}\`);
         const d = await res.json();
-        // APIから返ってきた「現地時間」をローカルでDate化
         const apiLocalTime = new Date(d.year, d.month - 1, d.day, d.hour, d.minute, d.seconds, d.milliSeconds).getTime();
-        
-        // 端末時計とのズレ（ミリ秒）を算出
         timeOffsetMs = apiLocalTime - Date.now();
-        
-        // 同期完了のサインをUIに表示
         const old = ['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];
         const n = new Date(Date.now() + timeOffsetMs);
         document.getElementById('koyomi-display').innerHTML = \`✅ GPS同期済 | 西暦\${n.getFullYear()}年 / 旧暦: \${old[n.getMonth()]}\`;
-        
-        updateClock(); // オフセット反映後、即座に時計を更新
+        updateClock();
       } catch(e) {
         document.getElementById('koyomi-display').textContent = "⚠️ 時刻同期失敗（ローカル表示中）";
       }
     }
 
-    // 時計を毎秒更新する処理（ズレ補正付き）
     function updateClock(){
-      // 端末の現在時刻に、APIとのズレ（timeOffsetMs）を足し合わせた「超正確な時間」
       const n = new Date(Date.now() + timeOffsetMs);
-      
       document.getElementById('time-display').textContent = n.toLocaleTimeString('ja-JP',{hour12:false});
       document.getElementById('date-jp').textContent = new Intl.DateTimeFormat('ja-JP-u-ca-japanese',{era:'long',year:'numeric',month:'long',day:'numeric',weekday:'short'}).format(n);
     }
-    
-    setInterval(updateClock, 1000); 
-    updateClock(); // 初回起動
+    setInterval(updateClock, 1000); updateClock();
 
     // --- その他フロント機能 ---
     async function fetchW(lat,lng,loc){try{const r=await fetch(\`https://api.open-meteo.com/v1/forecast?latitude=\${lat}&longitude=\${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4\`);const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h=\`<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">\${ic(d.weathercode[0])}</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">\${Math.round(d.temperature_2m_max[0])}°</span> / <span style="color:#3b82f6;font-weight:bold;">\${Math.round(d.temperature_2m_min[0])}°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 \${d.precipitation_probability_max[0]}%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">\`;for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+=\`<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">\${dt.getMonth()+1}/\${dt.getDate()}</div><div style="font-size:1.5rem;margin:4px 0;">\${ic(d.weathercode[i])}</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">\${Math.round(d.temperature_2m_max[i])}°</span> <span style="color:#3b82f6;">\${Math.round(d.temperature_2m_min[i])}°</span></div></div>\`;}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent=\`天気予報 (\${loc})\`;}catch(e){}}
-    
-    // 位置情報を取得し、天気と「時刻同期」を実行！
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(async p=>{
-        let loc='現在地';
-        try{
-          const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude);
-          const d=await r.json();
-          if(d.address)loc=d.address.city||d.address.town||d.address.village||d.address.suburb||'現在地';
-        }catch(e){}
-        fetchW(p.coords.latitude,p.coords.longitude,loc);
-        syncTimeAPI(p.coords.latitude, p.coords.longitude); // ★ ここで時刻同期APIを呼ぶ！
-      }, ()=>{
-        fetchW(35.8617,139.6455,'埼玉');
-        syncTimeAPI(35.8617,139.6455);
-      });
-    } else {
-      fetchW(35.8617,139.6455,'埼玉');
-      syncTimeAPI(35.8617,139.6455);
-    }
+        let loc='現在地'; try{ const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude); const d=await r.json(); if(d.address)loc=d.address.city||d.address.town||d.address.village||d.address.suburb||'現在地'; }catch(e){}
+        fetchW(p.coords.latitude,p.coords.longitude,loc); syncTimeAPI(p.coords.latitude, p.coords.longitude);
+      }, ()=>{ fetchW(35.8617,139.6455,'埼玉'); syncTimeAPI(35.8617,139.6455); });
+    } else { fetchW(35.8617,139.6455,'埼玉'); syncTimeAPI(35.8617,139.6455); }
 
     document.getElementById('news-tabs').addEventListener('click', e => { if(e.target.classList.contains('tab-btn')){ document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.news-list').forEach(x=>x.classList.remove('active-tab')); e.target.classList.add('active'); const t = document.getElementById(e.target.dataset.target); if(t) t.classList.add('active-tab'); } });
     async function loadNews() { try { const r = await fetch('/api/news'); const d = await r.json(); const rt = (items, id, act) => \`<div id="\${id}" class="news-list \${act?'active-tab':''}">\${items.map(i=>\`<a href="\${i.link}" target="_blank" class="news-item">\${i.imgUrl?\`<img src="\${i.imgUrl}" class="news-thumb" loading="lazy">\`:\`<div class="news-thumb no-img">No Img</div>\`}<div class="news-text"><div class="news-title">\${i.title.replace(' - '+i.source,'')}</div><div><span class="source-tag">\${i.source}</span></div></div></a>\`).join('')}</div>\`; document.getElementById('news-list-container').innerHTML = rt(d.top,'tab-top',true) + rt(d.biz,'tab-biz',false) + rt(d.market,'tab-market',false) + rt(d.it,'tab-it',false); } catch(e){ document.getElementById('news-list-container').innerHTML = '<div style="text-align:center; padding:20px; color:red;">取得失敗</div>'; } } loadNews();

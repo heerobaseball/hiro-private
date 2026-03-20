@@ -45,7 +45,6 @@ export function setupApi(app) {
     return new Response(o.body, { headers: h });
   });
 
-  app.post('/api/chat/archive', async c => { const { messages } = await c.req.json(); if (!messages || messages.length === 0) return c.json({ success: true }); const stmt = c.env.DB.prepare('INSERT OR IGNORE INTO private_chats (id, sender, text, timestamp) VALUES (?, ?, ?, ?)'); await c.env.DB.batch(messages.map(m => stmt.bind(m.id, m.sender, m.text, m.timestamp))); return c.json({ success: true }); });
   app.post('/api/checkin', async c => { const b = await c.req.json(); await c.env.DB.prepare('INSERT INTO checkins (lat, lng, location_name, created_at) VALUES (?, ?, ?, ?)').bind(b.lat, b.lng, b.location_name || null, Date.now()).run(); return c.json({ success: true }); });
   app.post('/api/checkin/delete', async c => { const b = await c.req.parseBody(); await c.env.DB.prepare('DELETE FROM checkins WHERE id = ?').bind(b['id']).run(); return c.redirect('/?date=' + b['date']); });
   
@@ -57,7 +56,6 @@ export function setupApi(app) {
   app.post('/api/speedtest/upload', async c => { await c.req.arrayBuffer(); return c.json({ success: true }); });
   app.post('/api/speedtest/save', async c => { const b = await c.req.json(); await c.env.DB.prepare('INSERT INTO speedtests (ping, download, upload, created_at) VALUES (?, ?, ?, ?)').bind(b.ping, b.dl, b.ul, Date.now()).run(); return c.json({ success: true }); });
 
-  // ★ 暗号化ライブラリ（SHA-256計算用）
   async function sha256(message) {
     const msgBuffer = new TextEncoder().encode(message);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -65,7 +63,6 @@ export function setupApi(app) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  // ★ 完全性を担保した監査ログ記録API (ブロックチェーン・ハッシュチェーン仕様)
   app.post('/api/log', async c => {
     try {
       const b = await c.req.json();
@@ -73,22 +70,12 @@ export function setupApi(app) {
       const ua = c.req.header('User-Agent') || 'unknown';
       const timestamp = Date.now();
       
-      // 1. 直前のログのハッシュ値を取得（なければ 'GENESIS' を設定）
       const lastLog = await c.env.DB.prepare('SELECT current_hash FROM audit_logs ORDER BY id DESC LIMIT 1').first();
       const previousHash = lastLog ? lastLog.current_hash : 'GENESIS_BLOCK';
+      const currentHash = await sha256(`${previousHash}|${timestamp}|${ip}|${b.action}|${b.target}`);
       
-      // 2. 今回のデータと直前のハッシュを混ぜて、今回のハッシュ値を計算
-      const rawData = `${previousHash}|${timestamp}|${ip}|${b.action}|${b.target}`;
-      const currentHash = await sha256(rawData);
-      
-      // 3. ハッシュ値と一緒にデータベースへ保存（追記のみ）
-      await c.env.DB.prepare('INSERT INTO audit_logs (timestamp, ip_address, user_agent, action, target, previous_hash, current_hash) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .bind(timestamp, ip, ua, b.action, b.target, previousHash, currentHash).run();
-      
+      await c.env.DB.prepare('INSERT INTO audit_logs (timestamp, ip_address, user_agent, action, target, previous_hash, current_hash) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(timestamp, ip, ua, b.action, b.target, previousHash, currentHash).run();
       return c.json({ success: true });
-    } catch(e) {
-      return c.json({ success: false }, 500);
-    }
+    } catch(e) { return c.json({ success: false }, 500); }
   });
-
-} // ★ この「最後の閉じカッコ」が消えてしまっていたのがエラーの原因です
+}
