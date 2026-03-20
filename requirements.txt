@@ -1,6 +1,5 @@
 fastapi
 uvicorn
 newspaper3k
-asari
 sumy
 tinysegmenter
