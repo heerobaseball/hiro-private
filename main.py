@@ -1,10 +1,12 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from PIL import Image, ImageEnhance, ImageStat  # ★ImageStatを追加
+from PIL import Image, ImageEnhance, ImageStat
 import io
+import zipfile
+from typing import List
 
-app = FastAPI(title="Smart Image Optimization API")
+app = FastAPI(title="Smart Batch Image Optimization API")
 
 # 🔒 セキュリティ設定（全許可）
 app.add_middleware(
@@ -15,45 +17,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 🧠 画像1枚を補正する関数（共通処理）
+def process_image(contents: bytes) -> bytes:
+    image = Image.open(io.BytesIO(contents))
+    
+    if image.mode in ("RGBA", "P"):
+        image = image.convert("RGB")
+
+    stat = ImageStat.Stat(image.convert("L"))
+    avg_brightness = stat.mean[0]
+
+    if avg_brightness < 90:
+        image = ImageEnhance.Brightness(image).enhance(1.5)
+        image = ImageEnhance.Contrast(image).enhance(1.2)
+    elif avg_brightness < 150:
+        image = ImageEnhance.Brightness(image).enhance(1.2)
+        image = ImageEnhance.Contrast(image).enhance(1.1)
+
+    img_byte_arr = io.BytesIO()
+    image.save(img_byte_arr, format='JPEG', quality=85)
+    return img_byte_arr.getvalue()
+
 @app.get("/")
 def read_root():
-    return {"status": "Smart Image Optimization API is running"}
+    return {"status": "Smart Batch Image Optimization API is running"}
 
+# 🚀 複数ファイルを受け取るAPIに変更（List[UploadFile]）
 @app.post("/optimize")
-async def optimize_image(file: UploadFile = File(...)):
+async def optimize_images(files: List[UploadFile] = File(...)):
     try:
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
+        # 【パターンA】もし1枚だけアップロードされたら、そのまま画像を返す
+        if len(files) == 1:
+            contents = await files[0].read()
+            processed_bytes = process_image(contents)
+            return Response(content=processed_bytes, media_type="image/jpeg")
+
+        # 【パターンB】複数枚アップロードされたら、ZIPファイルにまとめて返す
+        zip_buffer = io.BytesIO()
         
-        if image.mode in ("RGBA", "P"):
-            image = image.convert("RGB")
+        # zipfileを使ってメモリ上で圧縮ファイルを作成
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for i, file in enumerate(files):
+                contents = await file.read()
+                processed_bytes = process_image(contents)
+                
+                # 元のファイル名を取り出し、末尾に _optimized.jpg を付ける
+                original_name = file.filename if file.filename else f"image_{i+1}"
+                name_parts = original_name.rsplit('.', 1)
+                safe_filename = f"{name_parts[0]}_optimized.jpg"
+                
+                # 処理した画像をZIPの中に追加
+                zip_file.writestr(safe_filename, processed_bytes)
 
-        # 🧠 1. 画像の「平均的な明るさ」を計算する (0:真っ黒 〜 255:真っ白)
-        # モノクロ(L)に変換してから計算するのが一番正確で高速です
-        stat = ImageStat.Stat(image.convert("L"))
-        avg_brightness = stat.mean[0]
-
-        # 🧠 2. 明るさに応じて「補正の強さ」を自動で変える（スマート補正）
-        if avg_brightness < 90:
-            # 【パターンA】かなり暗い写真の場合 -> ガッツリ明るくする
-            image = ImageEnhance.Brightness(image).enhance(1.5)
-            image = ImageEnhance.Contrast(image).enhance(1.2)
-            
-        elif avg_brightness < 150:
-            # 【パターンB】少しだけ暗い写真の場合 -> マイルドに補正
-            image = ImageEnhance.Brightness(image).enhance(1.2)
-            image = ImageEnhance.Contrast(image).enhance(1.1)
-            
-        else:
-            # 【パターンC】すでに十分明るい写真の場合 -> 何もしない（元のまま）
-            pass 
-
-        # 3. 処理した画像を返す
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=85)
-        img_byte_arr = img_byte_arr.getvalue()
-
-        return Response(content=img_byte_arr, media_type="image/jpeg")
+        # 完成したZIPファイルをダウンロードさせる
+        return Response(
+            content=zip_buffer.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": "attachment; filename=optimized_images.zip"}
+        )
 
     except Exception as e:
         return {"error": str(e)}
