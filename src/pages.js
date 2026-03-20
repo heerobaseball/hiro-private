@@ -104,7 +104,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // --- ★ 複数画像対応：API直列（順番に）呼び出しロジック ---
+    // --- ★ 究極の安定化：Cloudinaryへ直接送る「直通ルート」 ---
     document.getElementById('optimize-btn').addEventListener('click', async () => {
       const fileInput = document.getElementById('optimize-input');
       const files = fileInput.files;
@@ -118,8 +118,11 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       gallery.innerHTML = '';
       document.getElementById('optimize-result').style.display = 'block';
 
+      // ★★★ ここにCloudinaryの設定を入力してください ★★★
+      const CLOUD_NAME = 'ここにCloud Nameを入力'; 
+      const UPLOAD_PRESET = 'ここにUpload preset nameを入力'; 
+
       try {
-        // ★ forループで「1枚ずつ順番に」通信する（エラー対策）
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           
@@ -127,14 +130,24 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
           
           const formData = new FormData();
           formData.append('file', file);
+          formData.append('upload_preset', UPLOAD_PRESET); // 直通ルートにはこれが必要
           
-          const res = await fetch('/api/optimize', { method: 'POST', body: formData });
+          // ★ Cloudflareを経由せず、直接Cloudinaryの最強サーバーへ送信！（切断されません）
+          const res = await fetch(\`https://api.cloudinary.com/v1_1/\${CLOUD_NAME}/image/upload\`, { 
+            method: 'POST', 
+            body: formData 
+          });
+          
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'アップロードに失敗しました。');
+          if (!res.ok) throw new Error(data.error?.message || 'アップロードに失敗しました。');
+          
+          // AI補正とダウンロード用のURLを生成
+          const optimizedUrl = data.secure_url.replace('/upload/', '/upload/e_improve/');
+          const downloadUrl = data.secure_url.replace('/upload/', '/upload/e_improve,fl_attachment/');
           
           const div = document.createElement('div');
           div.style.cssText = "display:flex; flex-direction:column; align-items:center; background:#f8fafc; padding:10px; border-radius:12px; border:1px solid var(--brd);";
-          div.innerHTML = \`<img src="\${data.optimizedUrl}" style="max-height:180px; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"><a href="\${data.downloadUrl}" target="_blank" download="optimized.jpg" style="margin-top:10px; padding:8px 16px; background:#10b981; color:white; border-radius:6px; font-weight:bold; text-decoration:none; font-size:0.9rem;">ダウンロード</a>\`;
+          div.innerHTML = \`<img src="\${optimizedUrl}" style="max-height:180px; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"><a href="\${downloadUrl}" target="_blank" download="optimized.jpg" style="margin-top:10px; padding:8px 16px; background:#10b981; color:white; border-radius:6px; font-weight:bold; text-decoration:none; font-size:0.9rem;">ダウンロード</a>\`;
           gallery.appendChild(div);
         }
 
@@ -276,6 +289,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </script>
 
 </body></html>
-    `);
-  }); // ★ ここが抜け落ちていました！
+  `);
+  });
 }
