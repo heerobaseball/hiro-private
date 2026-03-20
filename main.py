@@ -1,10 +1,10 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageStat  # ★ImageStatを追加
 import io
 
-app = FastAPI(title="Image Optimization API")
+app = FastAPI(title="Smart Image Optimization API")
 
 # 🔒 セキュリティ設定（全許可）
 app.add_middleware(
@@ -17,35 +17,42 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"status": "Image Optimization API is running"}
+    return {"status": "Smart Image Optimization API is running"}
 
 @app.post("/optimize")
 async def optimize_image(file: UploadFile = File(...)):
     try:
-        # 1. 送られてきた画像をメモリ上に読み込む
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
         
-        # JPEGで保存できるように、透過情報(RGBA)があればRGBに変換
         if image.mode in ("RGBA", "P"):
             image = image.convert("RGB")
 
-        # 2. 画像の最適化（明るさとコントラストの補正）
-        # 明るさを1.2倍にアップ（暗い写真を明るく）
-        enhancer_brightness = ImageEnhance.Brightness(image)
-        image = enhancer_brightness.enhance(1.2)
-        
-        # コントラストを1.1倍にアップ（文字などをクッキリさせる）
-        enhancer_contrast = ImageEnhance.Contrast(image)
-        image = enhancer_contrast.enhance(1.1)
+        # 🧠 1. 画像の「平均的な明るさ」を計算する (0:真っ黒 〜 255:真っ白)
+        # モノクロ(L)に変換してから計算するのが一番正確で高速です
+        stat = ImageStat.Stat(image.convert("L"))
+        avg_brightness = stat.mean[0]
 
-        # 3. 処理した画像をメモリ上に保存して返す準備
+        # 🧠 2. 明るさに応じて「補正の強さ」を自動で変える（スマート補正）
+        if avg_brightness < 90:
+            # 【パターンA】かなり暗い写真の場合 -> ガッツリ明るくする
+            image = ImageEnhance.Brightness(image).enhance(1.5)
+            image = ImageEnhance.Contrast(image).enhance(1.2)
+            
+        elif avg_brightness < 150:
+            # 【パターンB】少しだけ暗い写真の場合 -> マイルドに補正
+            image = ImageEnhance.Brightness(image).enhance(1.2)
+            image = ImageEnhance.Contrast(image).enhance(1.1)
+            
+        else:
+            # 【パターンC】すでに十分明るい写真の場合 -> 何もしない（元のまま）
+            pass 
+
+        # 3. 処理した画像を返す
         img_byte_arr = io.BytesIO()
-        # quality=85で、見た目を保ちつつファイルサイズを軽量化
         image.save(img_byte_arr, format='JPEG', quality=85)
         img_byte_arr = img_byte_arr.getvalue()
 
-        # 画像データとして直接レスポンスを返す
         return Response(content=img_byte_arr, media_type="image/jpeg")
 
     except Exception as e:
