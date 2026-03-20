@@ -276,5 +276,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </script>
 
 </body></html>
-  `);
+    `);
+  }); // ★ ここが抜け落ちていました！
 }
