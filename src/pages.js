@@ -104,7 +104,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // --- ★ 複数画像対応：API直列（順番に）呼び出しロジックに変更！ ---
+    // --- ★ 複数画像対応：API直列（順番に）呼び出しロジック ---
     document.getElementById('optimize-btn').addEventListener('click', async () => {
       const fileInput = document.getElementById('optimize-input');
       const files = fileInput.files;
@@ -119,22 +119,19 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       document.getElementById('optimize-result').style.display = 'block';
 
       try {
-        // ★ 並列（Promise.all）をやめて、forループで「1枚ずつ順番に」Cloudflareを経由して送信する
+        // ★ forループで「1枚ずつ順番に」通信する（エラー対策）
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           
-          // 進捗状況をボタンのテキストで表示
           btn.textContent = \`⏳ \${files.length}枚中 \${i + 1}枚目をAI補正中...\`;
           
           const formData = new FormData();
           formData.append('file', file);
           
-          // 1枚送信して、結果が返ってくるまで待つ（ネットワークのパンクを防止）
           const res = await fetch('/api/optimize', { method: 'POST', body: formData });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'アップロードに失敗しました。');
           
-          // 1枚処理が終わるごとに、すぐにギャラリーに画像を追加して表示する
           const div = document.createElement('div');
           div.style.cssText = "display:flex; flex-direction:column; align-items:center; background:#f8fafc; padding:10px; border-radius:12px; border:1px solid var(--brd);";
           div.innerHTML = \`<img src="\${data.optimizedUrl}" style="max-height:180px; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"><a href="\${data.downloadUrl}" target="_blank" download="optimized.jpg" style="margin-top:10px; padding:8px 16px; background:#10b981; color:white; border-radius:6px; font-weight:bold; text-decoration:none; font-size:0.9rem;">ダウンロード</a>\`;
