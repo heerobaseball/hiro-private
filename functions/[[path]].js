@@ -125,7 +125,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       
       try {
         // ★★★ ここにRender.comで発行されたURLを貼り付けます ★★★
-        const RENDER_API_URL = 'https://ai-news-api-xxxx.onrender.com/analyze'; 
+        const RENDER_API_URL = 'https://ai-news-api-j2m7.onrender.com/analyze';
         
         const res = await fetch(RENDER_API_URL, {
           method: 'POST',
