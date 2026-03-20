@@ -1,23 +1,18 @@
-// HTMLページの描画や、PWA（アプリ化）用ファイルの配信を行うモジュール
 import { html, raw } from 'hono/html';
 
 export function setupPages(app) {
   
-  // PWA関連のアセット配信
   app.get('/manifest.json', c => c.json({ name: "My Dashboard", short_name: "Dashboard", start_url: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#3b82f6", icons: [{ src: "/icon.svg", sizes: "512x512", type: "image/svg+xml" }], shortcuts: [{ name: "📍 チェックイン", short_name: "チェックイン", url: "/checkin", icons: [{ src: "/icon.svg", sizes: "192x192" }] }] }));
   app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
   app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
 
-  // チェックイン専用画面
   app.get('/checkin', c => c.html(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><meta name="theme-color" content="#3b82f6"><title>Check-in</title></head><body style="background:#f8fafc; color:#0f172a; text-align:center; padding-top:100px; font-family:sans-serif;"><h2 id="msg">📍 GPSで現在地を取得中...</h2><script>if(!navigator.geolocation) { alert('GPS非対応です'); window.location.href='/'; } navigator.geolocation.getCurrentPosition(async pos => { document.getElementById('msg').textContent = '📍 場所を特定中...'; const lat = pos.coords.latitude, lng = pos.coords.longitude; let locName = null; try { const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng); const data = await res.json(); if(data.address) locName = (data.address.province || data.address.state || '') + (data.address.city || data.address.town || data.address.village || '') + (data.address.suburb || data.address.quarter || ''); } catch(e) {} document.getElementById('msg').textContent = '💾 データベースに記録中...'; await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat: lat, lng: lng, location_name: locName})}); window.location.href = '/'; }, () => { alert('位置情報の取得に失敗しました。'); window.location.href='/'; }, {enableHighAccuracy: true});</script></body></html>`));
 
-  // トップページ（ダッシュボード）
   app.get('/', async (c) => {
     const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
     const tDate = c.req.query('date') || `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const start = new Date(`${tDate}T00:00:00+09:00`).getTime(), end = new Date(`${tDate}T23:59:59+09:00`).getTime();
     
-    // Cloudflare D1データベースから情報を取得
     const [notes, chats, checkins, mapNotes] = await Promise.all([ 
       c.env.DB.prepare('SELECT * FROM notes ORDER BY created_at DESC LIMIT 10').all(), 
       c.env.DB.prepare('SELECT * FROM chats ORDER BY created_at DESC LIMIT 30').all(), 
@@ -29,7 +24,6 @@ export function setupPages(app) {
     const mapPts = [...checkins.results.map(x=>({type:'checkin',id:x.id,lat:x.lat,lng:x.lng,locName:x.location_name,time:x.created_at})), ...mapNotes.results.map(x=>({type:'diary',id:x.id,lat:x.lat,lng:x.lng,locName:x.location_name,time:x.created_at,content:x.content,image:x.image_url}))].sort((a,b)=>a.time-b.time);
     const gApiKey = c.env.GOOGLE_MAPS_API_KEY || '';
 
-    // HTMLの構築と返却
     return c.html(html`
 <!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#3b82f6"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/icon.svg"><title>My Dashboard</title>
@@ -271,4 +265,5 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
 
 </body></html>
   `);
+  });
 }
