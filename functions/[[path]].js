@@ -1,21 +1,14 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
 import { html, raw } from 'hono/html';
-
-// 外部ファイルを読み込む（※chat_adminの読み込みを削除しました）
 import { setupApi } from '../src/api.js';
 import { setupTools } from '../src/tools.js';
 import { setupDiary } from '../src/diary.js';
 import { setupAdmin } from '../src/admin.js';
 
 const app = new Hono();
+setupApi(app); setupTools(app); setupDiary(app); setupAdmin(app);
 
-setupApi(app); 
-setupTools(app); 
-setupDiary(app);
-setupAdmin(app);
-
-// --- PWA設定・チェックイン画面 ---
 app.get('/manifest.json', c => c.json({ name: "My Dashboard", short_name: "Dashboard", start_url: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#3b82f6", icons: [{ src: "/icon.svg", sizes: "512x512", type: "image/svg+xml" }], shortcuts: [{ name: "📍 チェックイン", short_name: "チェックイン", url: "/checkin", icons: [{ src: "/icon.svg", sizes: "192x192" }] }] }));
 app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
 app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
@@ -56,8 +49,8 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   @media (max-width:1024px){.container{grid-template-columns:repeat(2,1fr);} .col-span-3{grid-column:span 2;}} @media (max-width:768px){.container{grid-template-columns:1fr;} .col-span-3,.col-span-2,.col-span-1{grid-column:span 1;}}
   .tabs{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;} .tabs::-webkit-scrollbar{display:none;}
   .tab-btn{padding:8px 16px;background:#f1f5f9;border:1px solid var(--brd);border-radius:20px;font-size:0.9rem;font-weight:bold;color:var(--mut);cursor:pointer;white-space:nowrap;} .tab-btn.active{background:var(--btn);color:white;border-color:var(--btn);}
-  .news-list{display:none;flex-direction:column;gap:8px;overflow-y:auto;max-height:280px;} .news-list.active-tab{display:flex;}
-  .news-item{display:flex;gap:10px;align-items:flex-start;padding:8px;border-radius:8px;border-bottom:1px solid var(--brd);}
+  .news-list{display:none;flex-direction:column;gap:8px;overflow-y:auto;max-height:350px;} .news-list.active-tab{display:flex;}
+  .news-item{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--brd);}
   .news-thumb{width:64px;height:64px;border-radius:8px;object-fit:cover;flex-shrink:0;border:1px solid var(--brd);} .news-thumb.no-img{background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--mut);}
   .news-text{flex-grow:1;display:flex;flex-direction:column;gap:4px;} .news-title{font-size:0.95rem;font-weight:600;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;} .source-tag{font-size:0.7rem;color:#475569;background:#f1f5f9;padding:2px 6px;border-radius:4px;}
   .form-row{display:flex;gap:8px;margin-bottom:12px;} .form-row input{flex-grow:1;padding:10px;border:1px solid var(--brd);border-radius:8px;outline:none;} .form-row button{padding:0 16px;background:var(--btn);color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer;}
@@ -67,6 +60,21 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
 </style>
 </head>
 <body>
+
+  <div id="ai-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.8); z-index:9999; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:var(--card-bg); padding:25px; border-radius:12px; max-width:500px; width:100%; position:relative; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+      <button onclick="document.getElementById('ai-modal').style.display='none'" style="position:absolute; top:12px; right:12px; border:none; background:#f1f5f9; color:var(--mut); font-size:18px; width:30px; height:30px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; font-weight:bold;">×</button>
+      <h3 id="ai-title" style="margin-top:0; font-size:16px; padding-right:30px; line-height:1.4; color:var(--txt);">🤖 AIが記事を読み込んでいます...</h3>
+      <div id="ai-sentiment" style="margin-bottom:15px; display:inline-block;"></div>
+      <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid var(--brd);">
+        <ul id="ai-summary" style="margin:0; padding-left:20px; font-size:14px; color:#334155; line-height:1.6; display:flex; flex-direction:column; gap:8px;">
+          <li style="list-style:none; text-align:center; color:var(--mut); font-weight:bold;">⏳ 分析中...</li>
+          <li style="list-style:none; text-align:center; color:var(--mut); font-size:12px;">※無料サーバーのため、初回はAIの起動に少し時間がかかります</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
   <header class="navbar"><div class="nav-brand">My Dashboard</div><div class="nav-links"><a href="/" class="active">Home</a><a href="/diary">Diary</a><a href="/speedtest">Speed</a><a href="#" target="_blank" style="color:#10b981;">Chat App ↗</a></div></header>
   
   <main><div class="container">
@@ -107,6 +115,38 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
+    // --- ★ ニュース分析用フロントエンドAPI呼び出し ---
+    window.analyzeNews = async function(url) {
+      const modal = document.getElementById('ai-modal');
+      modal.style.display = 'flex';
+      document.getElementById('ai-title').textContent = '🤖 記事を読み込み中...';
+      document.getElementById('ai-sentiment').innerHTML = '';
+      document.getElementById('ai-summary').innerHTML = '<li style="list-style:none; text-align:center; color:var(--mut);">⏳ 分析中...<br><small>※初回起動時は少し時間がかかります</small></li>';
+      
+      try {
+        // ★★★ ここにRender.comで発行されたURLを貼り付けます ★★★
+        const RENDER_API_URL = 'https://ai-news-api-xxxx.onrender.com/analyze'; 
+        
+        const res = await fetch(RENDER_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        });
+        const data = await res.json();
+        
+        document.getElementById('ai-title').textContent = data.title || 'タイトル取得失敗';
+        
+        let sColor = '#64748b', sText = '😐 中立 (NEUTRAL)';
+        if(data.sentiment === 'POSITIVE') { sColor = '#10b981'; sText = '📈 ポジティブ (POSITIVE)'; }
+        if(data.sentiment === 'NEGATIVE') { sColor = '#ef4444'; sText = '📉 ネガティブ (NEGATIVE)'; }
+        
+        document.getElementById('ai-sentiment').innerHTML = \`<span style="background:\${sColor}; color:white; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">\${sText}</span>\`;
+        document.getElementById('ai-summary').innerHTML = data.summary.map(s => \`<li>\${s}</li>\`).join('');
+      } catch(e) {
+        document.getElementById('ai-summary').innerHTML = '<li style="color:#ef4444; list-style:none;">❌ 分析に失敗しました。URLが対応していないか、サーバーの起動待ちです。</li>';
+      }
+    };
+
     // --- 外部APIによる正確な時刻同期ロジック ---
     let timeOffsetMs = 0;
     async function syncTimeAPI(lat, lng) {
@@ -141,7 +181,16 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     } else { fetchW(35.8617,139.6455,'埼玉'); syncTimeAPI(35.8617,139.6455); }
 
     document.getElementById('news-tabs').addEventListener('click', e => { if(e.target.classList.contains('tab-btn')){ document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.news-list').forEach(x=>x.classList.remove('active-tab')); e.target.classList.add('active'); const t = document.getElementById(e.target.dataset.target); if(t) t.classList.add('active-tab'); } });
-    async function loadNews() { try { const r = await fetch('/api/news'); const d = await r.json(); const rt = (items, id, act) => \`<div id="\${id}" class="news-list \${act?'active-tab':''}">\${items.map(i=>\`<a href="\${i.link}" target="_blank" class="news-item">\${i.imgUrl?\`<img src="\${i.imgUrl}" class="news-thumb" loading="lazy">\`:\`<div class="news-thumb no-img">No Img</div>\`}<div class="news-text"><div class="news-title">\${i.title.replace(' - '+i.source,'')}</div><div><span class="source-tag">\${i.source}</span></div></div></a>\`).join('')}</div>\`; document.getElementById('news-list-container').innerHTML = rt(d.top,'tab-top',true) + rt(d.biz,'tab-biz',false) + rt(d.market,'tab-market',false) + rt(d.it,'tab-it',false); } catch(e){ document.getElementById('news-list-container').innerHTML = '<div style="text-align:center; padding:20px; color:red;">取得失敗</div>'; } } loadNews();
+    
+    // ★ ニュース項目に「🤖 AI分析」ボタンを追加しました
+    async function loadNews() { 
+      try { 
+        const r = await fetch('/api/news'); const d = await r.json(); 
+        const rt = (items, id, act) => \`<div id="\${id}" class="news-list \${act?'active-tab':''}">\${items.map(i=>\`<div class="news-item" style="display:flex; align-items:center;"><a href="\${i.link}" target="_blank" style="display:flex; gap:10px; flex-grow:1; text-decoration:none; color:inherit; overflow:hidden;">\${i.imgUrl?\`<img src="\${i.imgUrl}" class="news-thumb" loading="lazy">\`:\`<div class="news-thumb no-img">No Img</div>\`}<div class="news-text"><div class="news-title">\${i.title.replace(' - '+i.source,'')}</div><div><span class="source-tag">\${i.source}</span></div></div></a><button onclick="analyzeNews('\${i.link}')" style="background:#8b5cf6; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:11px; font-weight:bold; white-space:nowrap; margin-left:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1); flex-shrink:0;">🤖 AI分析</button></div>\`).join('')}</div>\`; 
+        document.getElementById('news-list-container').innerHTML = rt(d.top,'tab-top',true) + rt(d.biz,'tab-biz',false) + rt(d.market,'tab-market',false) + rt(d.it,'tab-it',false); 
+      } catch(e){ document.getElementById('news-list-container').innerHTML = '<div style="text-align:center; padding:20px; color:red;">取得失敗</div>'; } 
+    } loadNews();
+
     const hDiv=document.getElementById('chat-history'); hDiv.scrollTop=hDiv.scrollHeight; let imgD=null,imgM=null; document.getElementById('chat-image-input').addEventListener('change',e=>{if(e.target.files[0]){imgM=e.target.files[0].type;const r=new FileReader();r.onload=ev=>{document.getElementById('image-preview').src=ev.target.result;document.getElementById('image-preview-container').style.display='block';imgD=ev.target.result.split(',')[1];};r.readAsDataURL(e.target.files[0]);}}); document.getElementById('clear-image').addEventListener('click',()=>{document.getElementById('chat-image-input').value='';imgD=null;document.getElementById('image-preview-container').style.display='none';}); document.getElementById('gemini-form').addEventListener('submit',async e=>{e.preventDefault();const inp=document.getElementById('gemini-input'),btn=document.getElementById('gemini-submit'),p=inp.value;hDiv.innerHTML+=\`<div class="chat-msg user-msg">\${imgD?'📷[画像] '+p:p}</div>\`;inp.value='';btn.disabled=true;hDiv.scrollTop=hDiv.scrollHeight;const pay={prompt:p,imageBase64:imgD,imageMimeType:imgM};document.getElementById('clear-image').click();try{const r=await fetch('/api/gemini',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pay)});const d=await r.json();hDiv.innerHTML+=\`<div class="chat-msg ai-msg">\${d.response}</div>\`;}catch(err){hDiv.innerHTML+=\`<div class="chat-msg ai-msg" style="color:red;">エラー</div>\`;} btn.disabled=false;hDiv.scrollTop=hDiv.scrollHeight;});
     window.initMap = function() { const el = document.getElementById('map'); if(!el) return; const m = new google.maps.Map(el, {zoom:13, center:{lat:35.8617, lng:139.6455}, mapTypeId:'roadmap', disableDefaultUI:true, zoomControl:true}); const pts = ${raw(JSON.stringify(mapPts))}; if(pts.length>0){ const path = pts.map(p=>({lat:p.lat,lng:p.lng})); new google.maps.Polyline({path:path, geodesic:true, strokeColor:'#ef4444', strokeOpacity:0.8, strokeWeight:4}).setMap(m); const b = new google.maps.LatLngBounds(); let tKm=0; pts.forEach(p=>{ const d=new Date(p.time); const tStr=d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); let hHtml="", icL="📍"; if(p.type==='diary'){ icL="📝"; hHtml='<b>📝 ('+tStr+')</b><br>'+p.content.replace(/\\n/g,'<br>')+(p.locName?'<br><small>📍 '+p.locName+'</small>':'')+(p.image?'<br><img src="'+p.image+'" style="width:100%;margin-top:5px;border-radius:4px;">':''); } else { hHtml='<b>📍 ('+tStr+')</b>'+(p.locName?'<br><small>'+p.locName+'</small>':''); } const pos={lat:p.lat,lng:p.lng}; b.extend(pos); const w=new google.maps.InfoWindow({content:hHtml}); const mk=new google.maps.Marker({position:pos,map:m,label:{text:icL,fontSize:'20px'},icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); mk.addListener('click',()=>w.open(m,mk)); }); m.fitBounds(b); for(let i=1;i<path.length;i++) tKm += google.maps.geometry.spherical.computeDistanceBetween(new google.maps.LatLng(path[i-1]), new google.maps.LatLng(path[i]))/1000; document.getElementById('total-distance').textContent=tKm.toFixed(1); } };
     window.manualCheckin = function(e) { const b=e.target; b.textContent="⏳ 特定中..."; b.disabled=true; navigator.geolocation.getCurrentPosition(async pos=>{ const lat=pos.coords.latitude, lng=pos.coords.longitude; let loc=null; try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);const d=await r.json();if(d.address)loc=(d.address.province||'')+(d.address.city||d.address.town||d.address.village||'')+(d.address.suburb||d.address.quarter||'');}catch(er){} b.textContent="💾 記録中..."; await fetch('/api/checkin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,location_name:loc})}); location.reload(); }, ()=>{alert('失敗');b.textContent="📍 今ここを記録";b.disabled=false;},{enableHighAccuracy:true}); }
