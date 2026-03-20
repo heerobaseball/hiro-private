@@ -104,7 +104,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // --- ★ 複数画像対応：API並列呼び出しロジック ---
+    // --- ★ 複数画像対応：API直列（順番に）呼び出しロジックに変更！ ---
     document.getElementById('optimize-btn').addEventListener('click', async () => {
       const fileInput = document.getElementById('optimize-input');
       const files = fileInput.files;
@@ -112,42 +112,39 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       if (files.length === 0) return alert('画像を選択してください。');
 
       const btn = document.getElementById('optimize-btn');
-      btn.textContent = \`⏳ \${files.length}枚の画像をAI補正中...\`;
       btn.disabled = true;
 
       const gallery = document.getElementById('optimize-gallery');
-      gallery.innerHTML = '<div style="color:var(--mut); font-weight:bold; padding:20px;">AIが画像を処理しています... しばらくお待ちください ✨</div>';
+      gallery.innerHTML = '';
       document.getElementById('optimize-result').style.display = 'block';
 
       try {
-        // 選択された全てのファイルを並列でCloudinary(経由API)へ送信！
-        const promises = Array.from(files).map(async (file) => {
+        // ★ 並列（Promise.all）をやめて、forループで「1枚ずつ順番に」Cloudflareを経由して送信する
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          
+          // 進捗状況をボタンのテキストで表示
+          btn.textContent = \`⏳ \${files.length}枚中 \${i + 1}枚目をAI補正中...\`;
+          
           const formData = new FormData();
           formData.append('file', file);
+          
+          // 1枚送信して、結果が返ってくるまで待つ（ネットワークのパンクを防止）
           const res = await fetch('/api/optimize', { method: 'POST', body: formData });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'アップロードに失敗しました。');
-          return data;
-        });
-
-        // 全部の画像の処理が終わるのを待つ
-        const results = await Promise.all(promises);
-
-        gallery.innerHTML = ''; // 「処理中...」の文字を消す
-
-        // 処理が終わった画像をギャラリーに並べる
-        results.forEach(data => {
+          
+          // 1枚処理が終わるごとに、すぐにギャラリーに画像を追加して表示する
           const div = document.createElement('div');
           div.style.cssText = "display:flex; flex-direction:column; align-items:center; background:#f8fafc; padding:10px; border-radius:12px; border:1px solid var(--brd);";
           div.innerHTML = \`<img src="\${data.optimizedUrl}" style="max-height:180px; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"><a href="\${data.downloadUrl}" target="_blank" download="optimized.jpg" style="margin-top:10px; padding:8px 16px; background:#10b981; color:white; border-radius:6px; font-weight:bold; text-decoration:none; font-size:0.9rem;">ダウンロード</a>\`;
           gallery.appendChild(div);
-        });
+        }
 
         btn.textContent = '✨ 一括AI補正完了！';
       } catch (err) {
         alert(err.message);
         btn.textContent = '一括AI補正を実行する';
-        gallery.innerHTML = '';
       } finally {
         setTimeout(() => { btn.textContent = '一括AI補正を実行する'; btn.disabled = false; fileInput.value = ''; }, 3000);
       }
@@ -283,5 +280,4 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
 
 </body></html>
   `);
-  });
 }
