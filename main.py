@@ -1,4 +1,4 @@
-from typing import List  # ★Listを明示的にインポート
+from typing import List, Annotated  # ★Annotatedを追加
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -42,9 +42,9 @@ def process_image(contents: bytes) -> bytes:
 def read_root():
     return {"status": "Smart Batch Image Optimization API is running"}
 
-# 🚀 【修正】厳格な型指定と File(...) の組み合わせでUIを強制的にファイル選択にする
+# 🚀 【修正】最新のFastAPI公式推奨の書き方（Annotatedを使用）
 @app.post("/optimize")
-async def optimize_images(files: List[UploadFile] = File(...)):
+async def optimize_images(files: Annotated[List[UploadFile], File(description="複数ファイルを選択")]):
     try:
         # 【パターンA】もし1枚だけアップロードされたら、そのまま画像を返す
         if len(files) == 1:
