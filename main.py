@@ -1,10 +1,9 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from PIL import Image, ImageEnhance, ImageStat
 import io
 import zipfile
-from typing import List
 
 app = FastAPI(title="Smart Batch Image Optimization API")
 
@@ -42,9 +41,9 @@ def process_image(contents: bytes) -> bytes:
 def read_root():
     return {"status": "Smart Batch Image Optimization API is running"}
 
-# 🚀 複数ファイルを受け取るAPIに変更（List[UploadFile]）
+# 🚀 【修正ポイント】 Python3.9以降の最新の書き方（list[UploadFile]）に変更し、= File(...) を削除
 @app.post("/optimize")
-async def optimize_images(files: List[UploadFile] = File(...)):
+async def optimize_images(files: list[UploadFile]):
     try:
         # 【パターンA】もし1枚だけアップロードされたら、そのまま画像を返す
         if len(files) == 1:
@@ -55,21 +54,21 @@ async def optimize_images(files: List[UploadFile] = File(...)):
         # 【パターンB】複数枚アップロードされたら、ZIPファイルにまとめて返す
         zip_buffer = io.BytesIO()
         
-        # zipfileを使ってメモリ上で圧縮ファイルを作成
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for i, file in enumerate(files):
                 contents = await file.read()
                 processed_bytes = process_image(contents)
                 
                 # 元のファイル名を取り出し、末尾に _optimized.jpg を付ける
-                original_name = file.filename if file.filename else f"image_{i+1}"
-                name_parts = original_name.rsplit('.', 1)
-                safe_filename = f"{name_parts[0]}_optimized.jpg"
+                original_name = file.filename if file.filename else f"image_{i+1}.jpg"
+                if '.' in original_name:
+                    name_parts = original_name.rsplit('.', 1)
+                    safe_filename = f"{name_parts[0]}_optimized.jpg"
+                else:
+                    safe_filename = f"{original_name}_optimized.jpg"
                 
-                # 処理した画像をZIPの中に追加
                 zip_file.writestr(safe_filename, processed_bytes)
 
-        # 完成したZIPファイルをダウンロードさせる
         return Response(
             content=zip_buffer.getvalue(),
             media_type="application/zip",
