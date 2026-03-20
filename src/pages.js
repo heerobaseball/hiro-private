@@ -91,14 +91,12 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     <div class="card col-span-3" style="border: 2px dashed #3b82f6;">
       <div class="card-header" style="color: #3b82f6;"><span class="card-icon" style="background: #3b82f6; color: white;">✨</span> Cloudinary AI 画像補正ツール</div>
       <div style="display:flex; flex-wrap:wrap; gap:15px; align-items:center;">
-        <input type="file" id="optimize-input" accept="image/*" style="flex-grow:1; padding:10px; border:1px solid var(--brd); border-radius:8px; cursor:pointer;">
-        <button id="optimize-btn" style="padding:12px 24px; background:var(--pri); color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">AI補正を実行する</button>
+        <input type="file" id="optimize-input" accept="image/*" multiple style="flex-grow:1; padding:10px; border:1px solid var(--brd); border-radius:8px; cursor:pointer;">
+        <button id="optimize-btn" style="padding:12px 24px; background:var(--pri); color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">一括AI補正を実行する</button>
       </div>
       <div id="optimize-result" style="display:none; text-align:center; margin-top:20px; padding-top:20px; border-top:1px solid var(--brd);">
-        <div style="font-size:0.9rem; font-weight:bold; color:var(--mut); margin-bottom:10px;">📸 AI自動補正完了！</div>
-        <img id="optimize-img" style="max-height:300px; border-radius:8px; border:1px solid var(--brd); box-shadow:0 4px 6px rgba(0,0,0,0.1);">
-        <br>
-        <a id="optimize-dl" download="optimized.jpg" target="_blank" style="display:inline-block; margin-top:15px; padding:10px 20px; background:#10b981; color:white; border-radius:8px; font-weight:bold; text-decoration:none;">画像をダウンロード</a>
+        <div style="font-size:0.9rem; font-weight:bold; color:var(--mut); margin-bottom:15px;">📸 AI自動補正ギャラリー</div>
+        <div id="optimize-gallery" style="display:flex; flex-wrap:wrap; gap:15px; justify-content:center;"></div>
       </div>
     </div>
 
@@ -106,32 +104,52 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // --- 画像API呼び出し ---
+    // --- ★ 複数画像対応：API並列呼び出しロジック ---
     document.getElementById('optimize-btn').addEventListener('click', async () => {
       const fileInput = document.getElementById('optimize-input');
-      if (!fileInput.files[0]) return alert('画像を選択してください。');
+      const files = fileInput.files;
+      
+      if (files.length === 0) return alert('画像を選択してください。');
 
       const btn = document.getElementById('optimize-btn');
-      btn.textContent = '⏳ API経由でAI補正中...';
+      btn.textContent = \`⏳ \${files.length}枚の画像をAI補正中...\`;
       btn.disabled = true;
 
-      const formData = new FormData();
-      formData.append('file', fileInput.files[0]);
+      const gallery = document.getElementById('optimize-gallery');
+      gallery.innerHTML = '<div style="color:var(--mut); font-weight:bold; padding:20px;">AIが画像を処理しています... しばらくお待ちください ✨</div>';
+      document.getElementById('optimize-result').style.display = 'block';
 
       try {
-        const res = await fetch('/api/optimize', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'アップロードに失敗しました。');
+        // 選択された全てのファイルを並列でCloudinary(経由API)へ送信！
+        const promises = Array.from(files).map(async (file) => {
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await fetch('/api/optimize', { method: 'POST', body: formData });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'アップロードに失敗しました。');
+          return data;
+        });
 
-        document.getElementById('optimize-img').src = data.optimizedUrl;
-        document.getElementById('optimize-dl').href = data.downloadUrl;
-        document.getElementById('optimize-result').style.display = 'block';
-        btn.textContent = '✨ AI補正完了！';
+        // 全部の画像の処理が終わるのを待つ
+        const results = await Promise.all(promises);
+
+        gallery.innerHTML = ''; // 「処理中...」の文字を消す
+
+        // 処理が終わった画像をギャラリーに並べる
+        results.forEach(data => {
+          const div = document.createElement('div');
+          div.style.cssText = "display:flex; flex-direction:column; align-items:center; background:#f8fafc; padding:10px; border-radius:12px; border:1px solid var(--brd);";
+          div.innerHTML = \`<img src="\${data.optimizedUrl}" style="max-height:180px; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"><a href="\${data.downloadUrl}" target="_blank" download="optimized.jpg" style="margin-top:10px; padding:8px 16px; background:#10b981; color:white; border-radius:6px; font-weight:bold; text-decoration:none; font-size:0.9rem;">ダウンロード</a>\`;
+          gallery.appendChild(div);
+        });
+
+        btn.textContent = '✨ 一括AI補正完了！';
       } catch (err) {
         alert(err.message);
-        btn.textContent = 'AI補正を実行する';
+        btn.textContent = '一括AI補正を実行する';
+        gallery.innerHTML = '';
       } finally {
-        setTimeout(() => { btn.textContent = 'AI補正を実行する'; btn.disabled = false; }, 3000);
+        setTimeout(() => { btn.textContent = '一括AI補正を実行する'; btn.disabled = false; fileInput.value = ''; }, 3000);
       }
     });
 
