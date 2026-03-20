@@ -7,6 +7,21 @@ import { setupDiary } from '../src/diary.js';
 import { setupAdmin } from '../src/admin.js';
 
 const app = new Hono();
+
+// --- ニュース取得APIを元の状態（Bloomberg等）に復元 ---
+app.get('/api/news', async c => {
+  const b = "site:bloomberg.co.jp OR site:jp.reuters.com OR site:nikkei.com";
+  const queries = { top: `https://news.google.com/rss/search?q=${encodeURIComponent(b)}&hl=ja&gl=JP&ceid=JP:ja`, biz: `https://news.google.com/rss/search?q=${encodeURIComponent('政治 OR 経済 ' + b)}&hl=ja&gl=JP&ceid=JP:ja`, market: `https://news.google.com/rss/search?q=${encodeURIComponent('株 OR 為替 OR マーケット ' + b)}&hl=ja&gl=JP&ceid=JP:ja`, it: `https://news.google.com/rss/search?q=${encodeURIComponent('IT OR AI OR テクノロジー ' + b)}&hl=ja&gl=JP&ceid=JP:ja` };
+  const res = {};
+  for (const [k, u] of Object.entries(queries)) {
+    try {
+      const t = await (await fetch(u)).text(); const items = []; let m; const rx = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<source.*?>(.*?)<\/source>/g;
+      while ((m = rx.exec(t)) !== null && items.length < 8) items.push({ title: m[1], link: m[2], imgUrl: m[3].match(/<img[^>]+src="([^">]+)"/)?.[1], source: m[4] });
+      res[k] = items;
+    } catch(e) { res[k] = []; }
+  } return c.json(res);
+});
+
 setupApi(app); setupTools(app); setupDiary(app); setupAdmin(app);
 
 app.get('/manifest.json', c => c.json({ name: "My Dashboard", short_name: "Dashboard", start_url: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#3b82f6", icons: [{ src: "/icon.svg", sizes: "512x512", type: "image/svg+xml" }], shortcuts: [{ name: "📍 チェックイン", short_name: "チェックイン", url: "/checkin", icons: [{ src: "/icon.svg", sizes: "192x192" }] }] }));
@@ -49,8 +64,8 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   @media (max-width:1024px){.container{grid-template-columns:repeat(2,1fr);} .col-span-3{grid-column:span 2;}} @media (max-width:768px){.container{grid-template-columns:1fr;} .col-span-3,.col-span-2,.col-span-1{grid-column:span 1;}}
   .tabs{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;} .tabs::-webkit-scrollbar{display:none;}
   .tab-btn{padding:8px 16px;background:#f1f5f9;border:1px solid var(--brd);border-radius:20px;font-size:0.9rem;font-weight:bold;color:var(--mut);cursor:pointer;white-space:nowrap;} .tab-btn.active{background:var(--btn);color:white;border-color:var(--btn);}
-  .news-list{display:none;flex-direction:column;gap:8px;overflow-y:auto;max-height:350px;} .news-list.active-tab{display:flex;}
-  .news-item{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--brd);}
+  .news-list{display:none;flex-direction:column;gap:8px;overflow-y:auto;max-height:280px;} .news-list.active-tab{display:flex;}
+  .news-item{display:flex;gap:10px;align-items:flex-start;padding:8px;border-radius:8px;border-bottom:1px solid var(--brd);}
   .news-thumb{width:64px;height:64px;border-radius:8px;object-fit:cover;flex-shrink:0;border:1px solid var(--brd);} .news-thumb.no-img{background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--mut);}
   .news-text{flex-grow:1;display:flex;flex-direction:column;gap:4px;} .news-title{font-size:0.95rem;font-weight:600;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;} .source-tag{font-size:0.7rem;color:#475569;background:#f1f5f9;padding:2px 6px;border-radius:4px;}
   .form-row{display:flex;gap:8px;margin-bottom:12px;} .form-row input{flex-grow:1;padding:10px;border:1px solid var(--brd);border-radius:8px;outline:none;} .form-row button{padding:0 16px;background:var(--btn);color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer;}
@@ -60,21 +75,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
 </style>
 </head>
 <body>
-
-  <div id="ai-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.8); z-index:9999; align-items:center; justify-content:center; padding:20px;">
-    <div style="background:var(--card-bg); padding:25px; border-radius:12px; max-width:500px; width:100%; position:relative; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
-      <button onclick="document.getElementById('ai-modal').style.display='none'" style="position:absolute; top:12px; right:12px; border:none; background:#f1f5f9; color:var(--mut); font-size:18px; width:30px; height:30px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; font-weight:bold;">×</button>
-      <h3 id="ai-title" style="margin-top:0; font-size:16px; padding-right:30px; line-height:1.4; color:var(--txt);">🤖 AIが記事を読み込んでいます...</h3>
-      <div id="ai-sentiment" style="margin-bottom:15px; display:inline-block;"></div>
-      <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid var(--brd);">
-        <ul id="ai-summary" style="margin:0; padding-left:20px; font-size:14px; color:#334155; line-height:1.6; display:flex; flex-direction:column; gap:8px;">
-          <li style="list-style:none; text-align:center; color:var(--mut); font-weight:bold;">⏳ 分析中...</li>
-          <li style="list-style:none; text-align:center; color:var(--mut); font-size:12px;">※無料サーバーのため、初回はAIの起動に少し時間がかかります</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
   <header class="navbar"><div class="nav-brand">My Dashboard</div><div class="nav-links"><a href="/" class="active">Home</a><a href="/diary">Diary</a><a href="/speedtest">Speed</a><a href="#" target="_blank" style="color:#10b981;">Chat App ↗</a></div></header>
   
   <main><div class="container">
@@ -115,39 +115,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // --- ★ ニュース分析用フロントエンドAPI呼び出し ---
-    window.analyzeNews = async function(url) {
-      const modal = document.getElementById('ai-modal');
-      modal.style.display = 'flex';
-      document.getElementById('ai-title').textContent = '🤖 記事を読み込み中...';
-      document.getElementById('ai-sentiment').innerHTML = '';
-      document.getElementById('ai-summary').innerHTML = '<li style="list-style:none; text-align:center; color:var(--mut);">⏳ 分析中...<br><small>※初回起動時は少し時間がかかります</small></li>';
-      
-      try {
-        // ★★★ ここにRender.comで発行されたURLを貼り付けます ★★★
-        const RENDER_API_URL = 'https://ai-news-api-j2m7.onrender.com/analyze';
-        
-        const res = await fetch(RENDER_API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: url })
-        });
-        const data = await res.json();
-        
-        document.getElementById('ai-title').textContent = data.title || 'タイトル取得失敗';
-        
-        let sColor = '#64748b', sText = '😐 中立 (NEUTRAL)';
-        if(data.sentiment === 'POSITIVE') { sColor = '#10b981'; sText = '📈 ポジティブ (POSITIVE)'; }
-        if(data.sentiment === 'NEGATIVE') { sColor = '#ef4444'; sText = '📉 ネガティブ (NEGATIVE)'; }
-        
-        document.getElementById('ai-sentiment').innerHTML = \`<span style="background:\${sColor}; color:white; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">\${sText}</span>\`;
-        document.getElementById('ai-summary').innerHTML = data.summary.map(s => \`<li>\${s}</li>\`).join('');
-      } catch(e) {
-        document.getElementById('ai-summary').innerHTML = '<li style="color:#ef4444; list-style:none;">❌ 分析に失敗しました。URLが対応していないか、サーバーの起動待ちです。</li>';
-      }
-    };
-
-    // --- 外部APIによる正確な時刻同期ロジック ---
     let timeOffsetMs = 0;
     async function syncTimeAPI(lat, lng) {
       try {
@@ -171,7 +138,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     }
     setInterval(updateClock, 1000); updateClock();
 
-    // --- その他フロント機能 ---
     async function fetchW(lat,lng,loc){try{const r=await fetch(\`https://api.open-meteo.com/v1/forecast?latitude=\${lat}&longitude=\${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4\`);const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h=\`<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">\${ic(d.weathercode[0])}</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">\${Math.round(d.temperature_2m_max[0])}°</span> / <span style="color:#3b82f6;font-weight:bold;">\${Math.round(d.temperature_2m_min[0])}°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 \${d.precipitation_probability_max[0]}%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">\`;for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+=\`<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">\${dt.getMonth()+1}/\${dt.getDate()}</div><div style="font-size:1.5rem;margin:4px 0;">\${ic(d.weathercode[i])}</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">\${Math.round(d.temperature_2m_max[i])}°</span> <span style="color:#3b82f6;">\${Math.round(d.temperature_2m_min[i])}°</span></div></div>\`;}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent=\`天気予報 (\${loc})\`;}catch(e){}}
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(async p=>{
@@ -182,11 +148,11 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
 
     document.getElementById('news-tabs').addEventListener('click', e => { if(e.target.classList.contains('tab-btn')){ document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.news-list').forEach(x=>x.classList.remove('active-tab')); e.target.classList.add('active'); const t = document.getElementById(e.target.dataset.target); if(t) t.classList.add('active-tab'); } });
     
-    // ★ ニュース項目に「🤖 AI分析」ボタンを追加しました
+    // --- ニュースの描画（AIボタンなし版） ---
     async function loadNews() { 
       try { 
         const r = await fetch('/api/news'); const d = await r.json(); 
-        const rt = (items, id, act) => \`<div id="\${id}" class="news-list \${act?'active-tab':''}">\${items.map(i=>\`<div class="news-item" style="display:flex; align-items:center;"><a href="\${i.link}" target="_blank" style="display:flex; gap:10px; flex-grow:1; text-decoration:none; color:inherit; overflow:hidden;">\${i.imgUrl?\`<img src="\${i.imgUrl}" class="news-thumb" loading="lazy">\`:\`<div class="news-thumb no-img">No Img</div>\`}<div class="news-text"><div class="news-title">\${i.title.replace(' - '+i.source,'')}</div><div><span class="source-tag">\${i.source}</span></div></div></a><button onclick="analyzeNews('\${i.link}')" style="background:#8b5cf6; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:11px; font-weight:bold; white-space:nowrap; margin-left:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1); flex-shrink:0;">🤖 AI分析</button></div>\`).join('')}</div>\`; 
+        const rt = (items, id, act) => \`<div id="\${id}" class="news-list \${act?'active-tab':''}">\${items.map(i=>\`<a href="\${i.link}" target="_blank" class="news-item">\${i.imgUrl?\`<img src="\${i.imgUrl}" class="news-thumb" loading="lazy">\`:\`<div class="news-thumb no-img">No Img</div>\`}<div class="news-text"><div class="news-title">\${i.title.replace(' - '+i.source,'')}</div><div><span class="source-tag">\${i.source}</span></div></div></a>\`).join('')}</div>\`; 
         document.getElementById('news-list-container').innerHTML = rt(d.top,'tab-top',true) + rt(d.biz,'tab-biz',false) + rt(d.market,'tab-market',false) + rt(d.it,'tab-it',false); 
       } catch(e){ document.getElementById('news-list-container').innerHTML = '<div style="text-align:center; padding:20px; color:red;">取得失敗</div>'; } 
     } loadNews();
