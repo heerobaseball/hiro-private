@@ -1,5 +1,4 @@
 fastapi
 uvicorn
-newspaper3k
-sumy
-tinysegmenter
+python-multipart
+Pillow
