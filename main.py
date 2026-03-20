@@ -9,17 +9,13 @@ import re
 
 app = FastAPI(title="My Dashboard AI News API (Lightweight)")
 
-# 🔒 セキュリティ設定
-origins = [
-    "http://localhost:8788", 
-    "http://127.0.0.1:8788",
-    "https://*.pages.dev",   
-]
-
+# 🔒 セキュリティ設定（CORSの修正）
+# FastAPIでは "*.pages.dev" の記述がそのままでは弾かれる原因になるため、
+# 連携テストのために思い切って全許可（"*"）に変更します。
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],  # 変更: どこからの通信でも受け付ける
+    allow_credentials=False, # 変更: "*" の場合は False にする必要がある
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -27,16 +23,13 @@ app.add_middleware(
 class NewsRequest(BaseModel):
     url: str
 
-# 📝 要約エンジン
 def summarize_text(text, sentences_count=3):
     parser = PlaintextParser.from_string(text, Tokenizer("japanese"))
     summarizer = LexRankSummarizer()
     summary = summarizer(parser.document, sentences_count)
     return [str(sentence) for sentence in summary]
 
-# 🧠 軽量な感情分析エンジン（キーワード辞書方式）
 def analyze_sentiment_light(text):
-    # 経済・ITニュースによく出るキーワード
     positive_words = ['上昇', '好調', '最高', '増益', '改善', '期待', '回復', '反発', '黒字', '成長', 'メリット', '成功', '革新', '買収']
     negative_words = ['下落', '不調', '最悪', '減益', '悪化', '懸念', '後退', '反落', '赤字', '衰退', 'デメリット', '失敗', '警戒', 'ショック', '流出']
     
@@ -60,7 +53,6 @@ async def analyze_news(request: NewsRequest):
         raise HTTPException(status_code=400, detail="URL is required")
 
     try:
-        # 1. ディープ・スクレイピング (newspaper3k)
         article = Article(request.url, language='ja')
         article.download()
         article.parse()
@@ -79,11 +71,7 @@ async def analyze_news(request: NewsRequest):
             }
 
         cleaned_body = re.sub(r'[\r\n\t]+', ' ', body).strip()
-
-        # 2. 軽量感情分析
         sentiment = analyze_sentiment_light(cleaned_body)
-
-        # 3. 自然言語処理による要約 (sumy)
         summary_sentences = summarize_text(cleaned_body, sentences_count=3)
 
         return {
