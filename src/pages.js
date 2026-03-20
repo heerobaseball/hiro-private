@@ -92,7 +92,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       <div class="card-header" style="color: #3b82f6;"><span class="card-icon" style="background: #3b82f6; color: white;">✨</span> Cloudinary AI 画像補正ツール</div>
       <div style="display:flex; flex-wrap:wrap; gap:15px; align-items:center;">
         <input type="file" id="optimize-input" accept="image/*" multiple style="flex-grow:1; padding:10px; border:1px solid var(--brd); border-radius:8px; cursor:pointer;">
-        <button id="optimize-btn" style="padding:12px 24px; background:var(--pri); color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">一括AI補正を実行する</button>
+        <button type="button" id="optimize-btn" style="padding:12px 24px; background:var(--pri); color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">一括AI補正を実行する</button>
       </div>
       <div id="optimize-result" style="display:none; text-align:center; margin-top:20px; padding-top:20px; border-top:1px solid var(--brd);">
         <div style="font-size:0.9rem; font-weight:bold; color:var(--mut); margin-bottom:15px;">📸 AI自動補正ギャラリー</div>
@@ -104,12 +104,23 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // --- ★ 究極の安定化：Cloudinaryへ直接送る「直通ルート」 ---
-    document.getElementById('optimize-btn').addEventListener('click', async () => {
+    // --- ★ エラーを根絶する最終安全版コード ---
+    document.getElementById('optimize-btn').addEventListener('click', async function(e) {
+      e.preventDefault(); // 予期せぬ画面リロードを完全ブロック
+
       const fileInput = document.getElementById('optimize-input');
       const files = fileInput.files;
       
       if (files.length === 0) return alert('画像を選択してください。');
+
+      // ★★★ ここにCloudinaryの設定を入力してください ★★★
+      const CLOUD_NAME = 'dzjo6duru'; 
+      const UPLOAD_PRESET = 'ml_default'; 
+
+      // 【安全装置】設定が書き換えられているかチェック
+      if (CLOUD_NAME.includes('ここ') || UPLOAD_PRESET.includes('ここ')) {
+        return alert('【エラー】Cloudinaryの設定が行われていません！\\nコード内の CLOUD_NAME と UPLOAD_PRESET をご自身のIDに書き換えてください。設定しないとネットワークエラーになります。');
+      }
 
       const btn = document.getElementById('optimize-btn');
       btn.disabled = true;
@@ -118,58 +129,56 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       gallery.innerHTML = '';
       document.getElementById('optimize-result').style.display = 'block';
 
-      // ★★★ ここにCloudinaryの設定を入力してください ★★★
-      const CLOUD_NAME = 'ここにCloud Nameを入力'; 
-      const UPLOAD_PRESET = 'ここにUpload preset nameを入力'; 
-
       try {
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           
-          btn.textContent = \`⏳ \${files.length}枚中 \${i + 1}枚目をAI補正中...\`;
+          btn.textContent = "⏳ " + files.length + "枚中 " + (i + 1) + "枚目をAI補正中...";
           
           const formData = new FormData();
           formData.append('file', file);
-          formData.append('upload_preset', UPLOAD_PRESET); // 直通ルートにはこれが必要
+          formData.append('upload_preset', UPLOAD_PRESET);
           
-          // ★ Cloudflareを経由せず、直接Cloudinaryの最強サーバーへ送信！（切断されません）
-          const res = await fetch(\`https://api.cloudinary.com/v1_1/\${CLOUD_NAME}/image/upload\`, { 
+          const res = await fetch("https://api.cloudinary.com/v1_1/" + CLOUD_NAME + "/image/upload", { 
             method: 'POST', 
             body: formData 
           });
           
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error?.message || 'アップロードに失敗しました。');
+          if (!res.ok) throw new Error((data.error && data.error.message) || '通信に失敗しました。');
           
-          // AI補正とダウンロード用のURLを生成
           const optimizedUrl = data.secure_url.replace('/upload/', '/upload/e_improve/');
           const downloadUrl = data.secure_url.replace('/upload/', '/upload/e_improve,fl_attachment/');
           
           const div = document.createElement('div');
           div.style.cssText = "display:flex; flex-direction:column; align-items:center; background:#f8fafc; padding:10px; border-radius:12px; border:1px solid var(--brd);";
-          div.innerHTML = \`<img src="\${optimizedUrl}" style="max-height:180px; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"><a href="\${downloadUrl}" target="_blank" download="optimized.jpg" style="margin-top:10px; padding:8px 16px; background:#10b981; color:white; border-radius:6px; font-weight:bold; text-decoration:none; font-size:0.9rem;">ダウンロード</a>\`;
+          div.innerHTML = '<img src="' + optimizedUrl + '" style="max-height:180px; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"><a href="' + downloadUrl + '" target="_blank" download="optimized.jpg" style="margin-top:10px; padding:8px 16px; background:#10b981; color:white; border-radius:6px; font-weight:bold; text-decoration:none; font-size:0.9rem;">ダウンロード</a>';
           gallery.appendChild(div);
         }
 
         btn.textContent = '✨ 一括AI補正完了！';
       } catch (err) {
-        alert(err.message);
+        alert("エラー: " + err.message);
         btn.textContent = '一括AI補正を実行する';
       } finally {
-        setTimeout(() => { btn.textContent = '一括AI補正を実行する'; btn.disabled = false; fileInput.value = ''; }, 3000);
+        setTimeout(function() { 
+          btn.textContent = '一括AI補正を実行する'; 
+          btn.disabled = false; 
+          fileInput.value = ''; 
+        }, 3000);
       }
     });
 
     let timeOffsetMs = 0;
     async function syncTimeAPI(lat, lng) {
       try {
-        const res = await fetch(\`https://timeapi.io/api/Time/current/coordinate?latitude=\${lat}&longitude=\${lng}\`);
+        const res = await fetch('https://timeapi.io/api/Time/current/coordinate?latitude=' + lat + '&longitude=' + lng);
         const d = await res.json();
         const apiLocalTime = new Date(d.year, d.month - 1, d.day, d.hour, d.minute, d.seconds, d.milliSeconds).getTime();
         timeOffsetMs = apiLocalTime - Date.now();
         const old = ['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];
         const n = new Date(Date.now() + timeOffsetMs);
-        document.getElementById('koyomi-display').innerHTML = \`✅ GPS同期済 | 西暦\${n.getFullYear()}年 / 旧暦: \${old[n.getMonth()]}\`;
+        document.getElementById('koyomi-display').innerHTML = '✅ GPS同期済 | 西暦' + n.getFullYear() + '年 / 旧暦: ' + old[n.getMonth()];
         updateClock();
       } catch(e) {
         document.getElementById('koyomi-display').textContent = "⚠️ 時刻同期失敗（ローカル表示中）";
@@ -183,7 +192,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     }
     setInterval(updateClock, 1000); updateClock();
 
-    async function fetchW(lat,lng,loc){try{const r=await fetch(\`https://api.open-meteo.com/v1/forecast?latitude=\${lat}&longitude=\${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4\`);const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h=\`<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">\${ic(d.weathercode[0])}</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">\${Math.round(d.temperature_2m_max[0])}°</span> / <span style="color:#3b82f6;font-weight:bold;">\${Math.round(d.temperature_2m_min[0])}°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 \${d.precipitation_probability_max[0]}%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">\`;for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+=\`<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">\${dt.getMonth()+1}/\${dt.getDate()}</div><div style="font-size:1.5rem;margin:4px 0;">\${ic(d.weathercode[i])}</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">\${Math.round(d.temperature_2m_max[i])}°</span> <span style="color:#3b82f6;">\${Math.round(d.temperature_2m_min[i])}°</span></div></div>\`;}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent=\`天気予報 (\${loc})\`;}catch(e){}}
+    async function fetchW(lat,lng,loc){try{const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lng + '&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4');const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h='<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">' + ic(d.weathercode[0]) + '</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">' + Math.round(d.temperature_2m_max[0]) + '°</span> / <span style="color:#3b82f6;font-weight:bold;">' + Math.round(d.temperature_2m_min[0]) + '°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 ' + d.precipitation_probability_max[0] + '%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">';for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+='<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">' + (dt.getMonth()+1) + '/' + dt.getDate() + '</div><div style="font-size:1.5rem;margin:4px 0;">' + ic(d.weathercode[i]) + '</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">' + Math.round(d.temperature_2m_max[i]) + '°</span> <span style="color:#3b82f6;">' + Math.round(d.temperature_2m_min[i]) + '°</span></div></div>';}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent='天気予報 (' + loc + ')';}catch(e){}}
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(async p=>{
         let loc='現在地'; try{ const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude); const d=await r.json(); if(d.address)loc=d.address.city||d.address.town||d.address.village||d.address.suburb||'現在地'; }catch(e){}
@@ -196,12 +205,12 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     async function loadNews() { 
       try { 
         const r = await fetch('/api/news'); const d = await r.json(); 
-        const rt = (items, id, act) => \`<div id="\${id}" class="news-list \${act?'active-tab':''}">\${items.map(i=>\`<a href="\${i.link}" target="_blank" class="news-item">\${i.imgUrl?\`<img src="\${i.imgUrl}" class="news-thumb" loading="lazy">\`:\`<div class="news-thumb no-img">No Img</div>\`}<div class="news-text"><div class="news-title">\${i.title.replace(' - '+i.source,'')}</div><div><span class="source-tag">\${i.source}</span></div></div></a>\`).join('')}</div>\`; 
+        const rt = (items, id, act) => '<div id="' + id + '" class="news-list ' + (act ? 'active-tab' : '') + '">' + items.map(i=>'<a href="' + i.link + '" target="_blank" class="news-item">' + (i.imgUrl?'<img src="' + i.imgUrl + '" class="news-thumb" loading="lazy">':'<div class="news-thumb no-img">No Img</div>') + '<div class="news-text"><div class="news-title">' + i.title.replace(' - '+i.source,'') + '</div><div><span class="source-tag">' + i.source + '</span></div></div></a>').join('') + '</div>'; 
         document.getElementById('news-list-container').innerHTML = rt(d.top,'tab-top',true) + rt(d.biz,'tab-biz',false) + rt(d.market,'tab-market',false) + rt(d.it,'tab-it',false); 
       } catch(e){ document.getElementById('news-list-container').innerHTML = '<div style="text-align:center; padding:20px; color:red;">取得失敗</div>'; } 
     } loadNews();
 
-    const hDiv=document.getElementById('chat-history'); hDiv.scrollTop=hDiv.scrollHeight; let imgD=null,imgM=null; document.getElementById('chat-image-input').addEventListener('change',e=>{if(e.target.files[0]){imgM=e.target.files[0].type;const r=new FileReader();r.onload=ev=>{document.getElementById('image-preview').src=ev.target.result;document.getElementById('image-preview-container').style.display='block';imgD=ev.target.result.split(',')[1];};r.readAsDataURL(e.target.files[0]);}}); document.getElementById('clear-image').addEventListener('click',()=>{document.getElementById('chat-image-input').value='';imgD=null;document.getElementById('image-preview-container').style.display='none';}); document.getElementById('gemini-form').addEventListener('submit',async e=>{e.preventDefault();const inp=document.getElementById('gemini-input'),btn=document.getElementById('gemini-submit'),p=inp.value;hDiv.innerHTML+=\`<div class="chat-msg user-msg">\${imgD?'📷[画像] '+p:p}</div>\`;inp.value='';btn.disabled=true;hDiv.scrollTop=hDiv.scrollHeight;const pay={prompt:p,imageBase64:imgD,imageMimeType:imgM};document.getElementById('clear-image').click();try{const r=await fetch('/api/gemini',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pay)});const d=await r.json();hDiv.innerHTML+=\`<div class="chat-msg ai-msg">\${d.response}</div>\`;}catch(err){hDiv.innerHTML+=\`<div class="chat-msg ai-msg" style="color:red;">エラー</div>\`;} btn.disabled=false;hDiv.scrollTop=hDiv.scrollHeight;});
+    const hDiv=document.getElementById('chat-history'); hDiv.scrollTop=hDiv.scrollHeight; let imgD=null,imgM=null; document.getElementById('chat-image-input').addEventListener('change',e=>{if(e.target.files[0]){imgM=e.target.files[0].type;const r=new FileReader();r.onload=ev=>{document.getElementById('image-preview').src=ev.target.result;document.getElementById('image-preview-container').style.display='block';imgD=ev.target.result.split(',')[1];};r.readAsDataURL(e.target.files[0]);}}); document.getElementById('clear-image').addEventListener('click',()=>{document.getElementById('chat-image-input').value='';imgD=null;document.getElementById('image-preview-container').style.display='none';}); document.getElementById('gemini-form').addEventListener('submit',async e=>{e.preventDefault();const inp=document.getElementById('gemini-input'),btn=document.getElementById('gemini-submit'),p=inp.value;hDiv.innerHTML+='<div class="chat-msg user-msg">' + (imgD?'📷[画像] '+p:p) + '</div>';inp.value='';btn.disabled=true;hDiv.scrollTop=hDiv.scrollHeight;const pay={prompt:p,imageBase64:imgD,imageMimeType:imgM};document.getElementById('clear-image').click();try{const r=await fetch('/api/gemini',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pay)});const d=await r.json();hDiv.innerHTML+='<div class="chat-msg ai-msg">' + d.response + '</div>';}catch(err){hDiv.innerHTML+='<div class="chat-msg ai-msg" style="color:red;">エラー</div>';} btn.disabled=false;hDiv.scrollTop=hDiv.scrollHeight;});
     window.initMap = function() { const el = document.getElementById('map'); if(!el) return; const m = new google.maps.Map(el, {zoom:13, center:{lat:35.8617, lng:139.6455}, mapTypeId:'roadmap', disableDefaultUI:true, zoomControl:true}); const pts = ${raw(JSON.stringify(mapPts))}; if(pts.length>0){ const path = pts.map(p=>({lat:p.lat,lng:p.lng})); new google.maps.Polyline({path:path, geodesic:true, strokeColor:'#ef4444', strokeOpacity:0.8, strokeWeight:4}).setMap(m); const b = new google.maps.LatLngBounds(); let tKm=0; pts.forEach(p=>{ const d=new Date(p.time); const tStr=d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); let hHtml="", icL="📍"; if(p.type==='diary'){ icL="📝"; hHtml='<b>📝 ('+tStr+')</b><br>'+p.content.replace(/\\n/g,'<br>')+(p.locName?'<br><small>📍 '+p.locName+'</small>':'')+(p.image?'<br><img src="'+p.image+'" style="width:100%;margin-top:5px;border-radius:4px;">':''); } else { hHtml='<b>📍 ('+tStr+')</b>'+(p.locName?'<br><small>'+p.locName+'</small>':''); } const pos={lat:p.lat,lng:p.lng}; b.extend(pos); const w=new google.maps.InfoWindow({content:hHtml}); const mk=new google.maps.Marker({position:pos,map:m,label:{text:icL,fontSize:'20px'},icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); mk.addListener('click',()=>w.open(m,mk)); }); m.fitBounds(b); for(let i=1;i<path.length;i++) tKm += google.maps.geometry.spherical.computeDistanceBetween(new google.maps.LatLng(path[i-1]), new google.maps.LatLng(path[i]))/1000; document.getElementById('total-distance').textContent=tKm.toFixed(1); } };
     window.manualCheckin = function(e) { const b=e.target; b.textContent="⏳ 特定中..."; b.disabled=true; navigator.geolocation.getCurrentPosition(async pos=>{ const lat=pos.coords.latitude, lng=pos.coords.longitude; let loc=null; try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);const d=await r.json();if(d.address)loc=(d.address.province||'')+(d.address.city||d.address.town||d.address.village||'')+(d.address.suburb||d.address.quarter||'');}catch(er){} b.textContent="💾 記録中..."; await fetch('/api/checkin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,location_name:loc})}); location.reload(); }, ()=>{alert('失敗');b.textContent="📍 今ここを記録";b.disabled=false;},{enableHighAccuracy:true}); }
   </script>
@@ -223,7 +232,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       Object.entries(data).reverse().forEach(([id, m]) => {
         const div = document.createElement('div');
         div.style.cssText = "background:#f8fafc; border:1px solid var(--brd); border-radius:8px; padding:10px; position:relative; margin-bottom:8px;";
-        div.innerHTML = \`<textarea style="width:100%; border:none; background:transparent; resize:none; outline:none; font-family:inherit; overflow:hidden;" rows="1">\${m.content || ''}</textarea><button class="del-memo" style="position:absolute; top:-6px; right:-6px; background:#ef4444; color:white; border:none; border-radius:50%; width:22px; height:22px; cursor:pointer;">×</button>\`;
+        div.innerHTML = '<textarea style="width:100%; border:none; background:transparent; resize:none; outline:none; font-family:inherit; overflow:hidden;" rows="1">' + (m.content || '') + '</textarea><button class="del-memo" style="position:absolute; top:-6px; right:-6px; background:#ef4444; color:white; border:none; border-radius:50%; width:22px; height:22px; cursor:pointer;">×</button>';
         
         memoList.appendChild(div);
         const ta = div.querySelector('textarea');
@@ -257,7 +266,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       arr.forEach(t => {
         const div = document.createElement('div');
         div.style.cssText = "background:#f8fafc; border:1px solid var(--brd); border-radius:8px; padding:10px; display:flex; align-items:center; gap:8px; margin-bottom:8px;";
-        div.innerHTML = \`<button class="tgl-todo" style="width:24px; height:24px; border-radius:6px; border:2px solid \${t.is_completed?'var(--pri)':'#cbd5e1'}; background:\${t.is_completed?'var(--pri)':'white'}; color:white; cursor:pointer;">\${t.is_completed?'✓':''}</button><div style="flex-grow:1; font-weight:500; \${t.is_completed?'text-decoration:line-through; color:var(--mut); font-weight:400;':''} ">\${t.task}</div><button class="del-todo" style="background:transparent; border:none; color:#ef4444; font-size:1.4rem; padding:0; cursor:pointer;">×</button>\`;
+        div.innerHTML = '<button class="tgl-todo" style="width:24px; height:24px; border-radius:6px; border:2px solid ' + (t.is_completed?'var(--pri)':'#cbd5e1') + '; background:' + (t.is_completed?'var(--pri)':'white') + '; color:white; cursor:pointer;">' + (t.is_completed?'✓':'') + '</button><div style="flex-grow:1; font-weight:500; ' + (t.is_completed?'text-decoration:line-through; color:var(--mut); font-weight:400;':'') + ' ">' + t.task + '</div><button class="del-todo" style="background:transparent; border:none; color:#ef4444; font-size:1.4rem; padding:0; cursor:pointer;">×</button>';
         
         div.querySelector('.tgl-todo').onclick = () => update(ref(db, 'todos/' + t.id), { is_completed: !(t.is_completed) });
         div.querySelector('.del-todo').onclick = () => remove(ref(db, 'todos/' + t.id));
@@ -289,6 +298,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </script>
 
 </body></html>
-  `);
+    `);
   });
 }
