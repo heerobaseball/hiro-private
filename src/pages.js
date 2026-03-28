@@ -6,8 +6,8 @@ export function setupPages(app) {
   app.get('/sw.js', c => { c.header('Content-Type', 'application/javascript'); return c.body(`self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => self.clients.claim()); self.addEventListener('fetch', e => {});`); });
   app.get('/icon.svg', c => { c.header('Content-Type', 'image/svg+xml'); return c.body(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#3b82f6" rx="112"/><text x="256" y="340" font-size="280" font-weight="bold" text-anchor="middle" fill="white" font-family="sans-serif">D</text></svg>`); });
 
-  // ★ チェックイン画面：スマホのGPS測位を考慮し、timeoutを 15000（15秒）に延長
-  app.get('/checkin', c => c.html(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><meta name="theme-color" content="#3b82f6"><title>Check-in</title></head><body style="background:#f8fafc; color:#0f172a; text-align:center; padding-top:100px; font-family:sans-serif;"><h2 id="msg">📍 GPSで現在地を取得中...</h2><script>if(!navigator.geolocation) { alert('GPS非対応です'); window.location.href='/'; } navigator.geolocation.getCurrentPosition(async pos => { document.getElementById('msg').textContent = '📍 場所を特定中...'; const lat = pos.coords.latitude, lng = pos.coords.longitude; let locName = null; try { const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng); const data = await res.json(); if(data.address) locName = (data.address.province || data.address.state || '') + (data.address.city || data.address.town || data.address.village || '') + (data.address.suburb || data.address.quarter || ''); } catch(e) {} document.getElementById('msg').textContent = '💾 データベースに記録中...'; await fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lat: lat, lng: lng, location_name: locName})}); window.location.href = '/'; }, (err) => { alert('位置情報の取得に失敗しました。電波状況をご確認ください。\\n詳細: ' + err.message); window.location.href='/'; }, {enableHighAccuracy: true, timeout: 15000});</script></body></html>`));
+  // ★ 修正1：ショートカット専用チェックイン画面（二段構えのGPS取得＋詳細エラー表示）
+  app.get('/checkin', c => c.html(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><meta name="theme-color" content="#3b82f6"><title>Check-in</title></head><body style="background:#f8fafc; color:#0f172a; text-align:center; padding-top:100px; font-family:sans-serif;"><h2 id="msg">📍 GPSで現在地を取得中...</h2><script>if(!navigator.geolocation){alert('GPS非対応です');window.location.href='/';}const success=async(pos)=>{document.getElementById('msg').textContent='📍 場所を特定中...';const lat=pos.coords.latitude,lng=pos.coords.longitude;let loc=null;try{const res=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);const data=await res.json();if(data.address)loc=(data.address.province||'')+(data.address.city||data.address.town||data.address.village||'')+(data.address.suburb||data.address.quarter||'');}catch(e){}document.getElementById('msg').textContent='💾 記録中...';await fetch('/api/checkin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:lat,lng:lng,location_name:loc})});window.location.href='/';};const fail=(err)=>{let m="エラー";if(err.code===1)m="スマホの設定で位置情報の利用が許可されていません。";if(err.code===2)m="電波状況により位置が特定できませんでした。";if(err.code===3)m="取得に時間がかかりタイムアウトしました。";alert('失敗:\\n'+m);window.location.href='/';};navigator.geolocation.getCurrentPosition(success,(err)=>{if(err.code===2||err.code===3)navigator.geolocation.getCurrentPosition(success,fail,{enableHighAccuracy:false,timeout:10000});else fail(err);},{enableHighAccuracy:true,timeout:5000});</script></body></html>`));
 
   app.get('/', async (c) => {
     const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
@@ -152,8 +152,8 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     // =========================================================================
     // ★★★ 共通設定：ここにCloudinaryの設定を入力してください ★★★
     // =========================================================================
-    const CLOUDINARY_CLOUD_NAME = 'ここにCloud Nameを入力'; 
-    const CLOUDINARY_UPLOAD_PRESET = 'ここにUpload preset nameを入力'; 
+    const CLOUDINARY_CLOUD_NAME = 'dzjo6duru'; 
+    const CLOUDINARY_UPLOAD_PRESET = 'ml_default'; 
 
     function checkCloudinaryConfig() {
       if (CLOUDINARY_CLOUD_NAME.includes('ここ') || CLOUDINARY_UPLOAD_PRESET.includes('ここ')) {
@@ -276,7 +276,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       document.getElementById('custom-dl').href = dlUrl;
     });
 
-    // --- ★ エラー対策済みの時刻同期ロジック ---
+    // --- 各種ウィジェット（時計） ---
     let timeOffsetMs = 0;
     async function syncTimeAPI(lat, lng) {
       const old = ['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];
@@ -284,11 +284,9 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
         const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Tokyo');
         if (!res.ok) throw new Error('API Error');
         const data = await res.json();
-        
         const apiLocalTime = new Date(data.datetime).getTime();
         timeOffsetMs = apiLocalTime - Date.now();
         const n = new Date(Date.now() + timeOffsetMs);
-        
         document.getElementById('koyomi-display').innerHTML = '✅ 標準時同期済 | 西暦' + n.getFullYear() + '年 / 旧暦: ' + old[n.getMonth()];
         updateClock();
       } catch(e) {
@@ -306,12 +304,17 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
 
     async function fetchW(lat,lng,loc){try{const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lng + '&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4');const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h='<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">' + ic(d.weathercode[0]) + '</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">' + Math.round(d.temperature_2m_max[0]) + '°</span> / <span style="color:#3b82f6;font-weight:bold;">' + Math.round(d.temperature_2m_min[0]) + '°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 ' + d.precipitation_probability_max[0] + '%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">';for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+='<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">' + (dt.getMonth()+1) + '/' + dt.getDate() + '</div><div style="font-size:1.5rem;margin:4px 0;">' + ic(d.weathercode[i]) + '</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">' + Math.round(d.temperature_2m_max[i]) + '°</span> <span style="color:#3b82f6;">' + Math.round(d.temperature_2m_min[i]) + '°</span></div></div>';}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent='天気予報 (' + loc + ')';}catch(e){}}
     
-    // ★ PC無限ロード対策：timeout を 4000 ミリ秒に設定
+    // ★ 修正2：ページ読み込み時のGPSも二段構えに変更
     if(navigator.geolocation){
-      navigator.geolocation.getCurrentPosition(async p=>{
+      const s = async (p) => {
         let loc='現在地'; try{ const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude); const d=await r.json(); if(d.address)loc=d.address.city||d.address.town||d.address.village||d.address.suburb||'現在地'; }catch(e){}
         fetchW(p.coords.latitude,p.coords.longitude,loc); syncTimeAPI(p.coords.latitude, p.coords.longitude);
-      }, ()=>{ fetchW(35.8617,139.6455,'埼玉'); syncTimeAPI(35.8617,139.6455); }, { timeout: 4000 });
+      };
+      const f = () => { fetchW(35.8617,139.6455,'埼玉'); syncTimeAPI(35.8617,139.6455); };
+      navigator.geolocation.getCurrentPosition(s, (err) => {
+        if(err.code===2||err.code===3) navigator.geolocation.getCurrentPosition(s, f, {enableHighAccuracy:false, timeout:5000});
+        else f();
+      }, {enableHighAccuracy:true, timeout:3000});
     } else { fetchW(35.8617,139.6455,'埼玉'); syncTimeAPI(35.8617,139.6455); }
 
     document.getElementById('news-tabs').addEventListener('click', e => { if(e.target.classList.contains('tab-btn')){ document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.news-list').forEach(x=>x.classList.remove('active-tab')); e.target.classList.add('active'); const t = document.getElementById(e.target.dataset.target); if(t) t.classList.add('active-tab'); } });
@@ -327,8 +330,23 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     const hDiv=document.getElementById('chat-history'); hDiv.scrollTop=hDiv.scrollHeight; let imgD=null,imgM=null; document.getElementById('chat-image-input').addEventListener('change',e=>{if(e.target.files[0]){imgM=e.target.files[0].type;const r=new FileReader();r.onload=ev=>{document.getElementById('image-preview').src=ev.target.result;document.getElementById('image-preview-container').style.display='block';imgD=ev.target.result.split(',')[1];};r.readAsDataURL(e.target.files[0]);}}); document.getElementById('clear-image').addEventListener('click',()=>{document.getElementById('chat-image-input').value='';imgD=null;document.getElementById('image-preview-container').style.display='none';}); document.getElementById('gemini-form').addEventListener('submit',async e=>{e.preventDefault();const inp=document.getElementById('gemini-input'),btn=document.getElementById('gemini-submit'),p=inp.value;hDiv.innerHTML+='<div class="chat-msg user-msg">' + (imgD?'📷[画像] '+p:p) + '</div>';inp.value='';btn.disabled=true;hDiv.scrollTop=hDiv.scrollHeight;const pay={prompt:p,imageBase64:imgD,imageMimeType:imgM};document.getElementById('clear-image').click();try{const r=await fetch('/api/gemini',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pay)});const d=await r.json();hDiv.innerHTML+='<div class="chat-msg ai-msg">' + d.response + '</div>';}catch(err){hDiv.innerHTML+='<div class="chat-msg ai-msg" style="color:red;">エラー</div>';} btn.disabled=false;hDiv.scrollTop=hDiv.scrollHeight;});
     window.initMap = function() { const el = document.getElementById('map'); if(!el) return; const m = new google.maps.Map(el, {zoom:13, center:{lat:35.8617, lng:139.6455}, mapTypeId:'roadmap', disableDefaultUI:true, zoomControl:true}); const pts = ${raw(JSON.stringify(mapPts))}; if(pts.length>0){ const path = pts.map(p=>({lat:p.lat,lng:p.lng})); new google.maps.Polyline({path:path, geodesic:true, strokeColor:'#ef4444', strokeOpacity:0.8, strokeWeight:4}).setMap(m); const b = new google.maps.LatLngBounds(); let tKm=0; pts.forEach(p=>{ const d=new Date(p.time); const tStr=d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); let hHtml="", icL="📍"; if(p.type==='diary'){ icL="📝"; hHtml='<b>📝 ('+tStr+')</b><br>'+p.content.replace(/\\n/g,'<br>')+(p.locName?'<br><small>📍 '+p.locName+'</small>':'')+(p.image?'<br><img src="'+p.image+'" style="width:100%;margin-top:5px;border-radius:4px;">':''); } else { hHtml='<b>📍 ('+tStr+')</b>'+(p.locName?'<br><small>'+p.locName+'</small>':''); } const pos={lat:p.lat,lng:p.lng}; b.extend(pos); const w=new google.maps.InfoWindow({content:hHtml}); const mk=new google.maps.Marker({position:pos,map:m,label:{text:icL,fontSize:'20px'},icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); mk.addListener('click',()=>w.open(m,mk)); }); m.fitBounds(b); for(let i=1;i<path.length;i++) tKm += google.maps.geometry.spherical.computeDistanceBetween(new google.maps.LatLng(path[i-1]), new google.maps.LatLng(path[i]))/1000; document.getElementById('total-distance').textContent=tKm.toFixed(1); } };
     
-    // ★ 手動チェックインボタン：スマホ対策として timeout を 15000（15秒）に延長し、エラー詳細を表示
-    window.manualCheckin = function(e) { const b=e.target; b.textContent="⏳ 特定中..."; b.disabled=true; navigator.geolocation.getCurrentPosition(async pos=>{ const lat=pos.coords.latitude, lng=pos.coords.longitude; let loc=null; try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);const d=await r.json();if(d.address)loc=(d.address.province||'')+(d.address.city||d.address.town||d.address.village||'')+(d.address.suburb||d.address.quarter||'');}catch(er){} b.textContent="💾 記録中..."; await fetch('/api/checkin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,location_name:loc})}); location.reload(); }, (err)=>{alert('位置情報の取得に失敗しました。電波状況をご確認ください。\\n詳細: '+err.message);b.textContent="📍 今ここを記録する";b.disabled=false;},{enableHighAccuracy:true, timeout: 15000}); }
+    // ★ 修正3：手動チェックインボタン（二段構えのGPS取得＋詳細エラー表示）
+    window.manualCheckin = function(e) {
+      const b=e.target; b.textContent="⏳ 特定中..."; b.disabled=true;
+      const s = async (pos) => {
+        const lat=pos.coords.latitude, lng=pos.coords.longitude; let loc=null;
+        try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng);const d=await r.json();if(d.address)loc=(d.address.province||'')+(d.address.city||d.address.town||d.address.village||'')+(d.address.suburb||d.address.quarter||'');}catch(er){}
+        b.textContent="💾 記録中..."; await fetch('/api/checkin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,location_name:loc})}); location.reload();
+      };
+      const f = (err) => {
+        let m="エラー"; if(err.code===1)m="スマホの設定で位置情報が許可されていません。"; if(err.code===2)m="電波状況により特定できませんでした。"; if(err.code===3)m="取得に時間がかかりタイムアウトしました。";
+        alert('失敗:\\n'+m); b.textContent="📍 今ここを記録する"; b.disabled=false;
+      };
+      navigator.geolocation.getCurrentPosition(s, (err) => {
+        if(err.code===2||err.code===3) navigator.geolocation.getCurrentPosition(s, f, {enableHighAccuracy:false, timeout:10000});
+        else f(err);
+      }, {enableHighAccuracy:true, timeout:5000});
+    };
   </script>
 
   <script type="module">
