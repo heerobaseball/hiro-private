@@ -153,7 +153,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     // =========================================================================
     const CLOUDINARY_CLOUD_NAME = 'dzjo6duru'; 
     const CLOUDINARY_UPLOAD_PRESET = 'ml_default'; 
-
+    
     function checkCloudinaryConfig() {
       if (CLOUDINARY_CLOUD_NAME.includes('ここ') || CLOUDINARY_UPLOAD_PRESET.includes('ここ')) {
         alert('【エラー】Cloudinaryの設定が行われていません！\\nコード内の CLOUDINARY_CLOUD_NAME と CLOUDINARY_UPLOAD_PRESET をご自身のIDに書き換えてください。');
@@ -275,18 +275,19 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       document.getElementById('custom-dl').href = dlUrl;
     });
 
-    // --- 各種ウィジェット（時計） ---
+    // --- ★ 自作APIを使って時刻同期（外部API依存を完全に解消） ---
     let timeOffsetMs = 0;
     async function syncTimeAPI(lat, lng) {
       const old = ['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];
       try {
-        const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Tokyo');
+        const res = await fetch('/api/time?t=' + Date.now());
         if (!res.ok) throw new Error('API Error');
         const data = await res.json();
-        const apiLocalTime = new Date(data.datetime).getTime();
-        timeOffsetMs = apiLocalTime - Date.now();
+        
+        timeOffsetMs = data.timestamp - Date.now();
         const n = new Date(Date.now() + timeOffsetMs);
-        document.getElementById('koyomi-display').innerHTML = '✅ 標準時同期済 | 西暦' + n.getFullYear() + '年 / 旧暦: ' + old[n.getMonth()];
+        
+        document.getElementById('koyomi-display').innerHTML = '✅ サーバー時刻同期済 | 西暦' + n.getFullYear() + '年 / 旧暦: ' + old[n.getMonth()];
         updateClock();
       } catch(e) {
         const n = new Date();

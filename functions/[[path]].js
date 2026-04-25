@@ -8,6 +8,7 @@ import { setupDiary } from '../src/diary.js';
 import { setupAdmin } from '../src/admin.js';
 import { setupImage } from '../src/image.js';
 import { setupNews } from '../src/news.js';
+import { setupTime } from '../src/time.js'; // ★ 新しく追加
 import { setupPages } from '../src/pages.js';
 
 const app = new Hono();
@@ -19,7 +20,8 @@ setupDiary(app);
 setupAdmin(app);
 setupImage(app);
 setupNews(app);
-setupPages(app); // 画面描画用
+setupTime(app);  // ★ 新しく追加 (時刻API)
+setupPages(app); // 画面描画用 (最後に実行)
 
 // Cloudflare Pagesの処理としてエクスポート
 export const onRequest = handle(app);
