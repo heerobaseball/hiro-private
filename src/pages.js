@@ -24,7 +24,7 @@ export function setupPages(app) {
     const mapPts = [...checkins.results.map(x=>({type:'checkin',id:x.id,lat:x.lat,lng:x.lng,locName:x.location_name,time:x.created_at})), ...mapNotes.results.map(x=>({type:'diary',id:x.id,lat:x.lat,lng:x.lng,locName:x.location_name,time:x.created_at,content:x.content,image:x.image_url}))].sort((a,b)=>a.time-b.time);
     const gApiKey = c.env.GOOGLE_MAPS_API_KEY || '';
     
-    // ★ 追加：Geminiのキーが設定されているかチェック（キー自体は画面に渡さない）
+    // ★ Geminiのキーが設定されているかチェック
     const hasGeminiKey = !!c.env.GEMINI_API_KEY;
 
     return c.html(html`
@@ -102,62 +102,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     
     <div class="card col-span-2"><div class="card-header" style="justify-content:space-between; width:100%;"><div><span class="card-icon">📸</span> Diary</div><a href="/diary/post" style="font-size:14px; color:var(--pri); font-weight:bold;">＋ 投稿</a></div><div class="list-area" style="max-height:350px;">${notes.results.map(n => { const d = new Date(n.created_at+9*3600000); return html`<a href="/diary" class="diary-list-item">${n.image_url?html`<img src="${n.image_url}" class="diary-list-thumb" loading="lazy">`:html`<div class="diary-list-thumb no-img" style="background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:1.5rem;">📝</div>`}<div style="flex-grow:1; overflow:hidden; display:flex; flex-direction:column; gap:4px;"><div style="font-size:0.75rem; color:var(--pri); font-weight:bold;">${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}</div><div style="font-size:0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${n.content.replace(/\n/g, ' ')}</div></div></a>`; })}</div></div>
     
-    <div class="card col-span-3" style="border: 2px dashed #3b82f6;">
-      <div class="card-header" style="color: #3b82f6;"><span class="card-icon" style="background: #3b82f6; color: white;">✨</span> Cloudinary AI 画像補正ツール（おまかせ一括）</div>
-      <div style="display:flex; flex-wrap:wrap; gap:15px; align-items:center;">
-        <input type="file" id="optimize-input" accept="image/*" multiple style="flex-grow:1; padding:10px; border:1px solid var(--brd); border-radius:8px; cursor:pointer;">
-        <button type="button" id="optimize-btn" style="padding:12px 24px; background:var(--pri); color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">一括AI補正を実行</button>
-      </div>
-      <div id="optimize-result" style="display:none; text-align:center; margin-top:20px; padding-top:20px; border-top:1px solid var(--brd);">
-        <div style="font-size:0.9rem; font-weight:bold; color:var(--mut); margin-bottom:15px;">📸 AI自動補正ギャラリー</div>
-        <div id="optimize-gallery" style="display:flex; flex-wrap:wrap; gap:15px; justify-content:center;"></div>
-      </div>
-    </div>
-
-    <div class="card col-span-3" style="border: 2px dashed #10b981;">
-      <div class="card-header" style="color: #10b981;"><span class="card-icon" style="background: #10b981; color: white;">🎨</span> カスタム画像編集ツール（好みに合わせて手動調整）</div>
-      
-      <div style="display:flex; flex-wrap:wrap; gap:15px; align-items:center; margin-bottom:15px;">
-        <input type="file" id="custom-input" accept="image/*" style="flex-grow:1; padding:10px; border:1px solid var(--brd); border-radius:8px; cursor:pointer;">
-        <button type="button" id="custom-upload-btn" style="padding:12px 24px; background:#10b981; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">1. 画像を読み込む</button>
-      </div>
-
-      <div id="custom-controls" style="display:none; background:#f8fafc; padding:20px; border-radius:12px; border:1px solid var(--brd); margin-bottom:15px;">
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:20px;">
-          <div>
-            <label style="font-weight:bold; font-size:0.9rem; color:var(--mut);">明るさ (<span id="val-bright">0</span>)</label>
-            <input type="range" id="range-bright" min="-50" max="50" value="0" style="width:100%; margin-top:8px;" oninput="document.getElementById('val-bright').textContent=this.value">
-          </div>
-          <div>
-            <label style="font-weight:bold; font-size:0.9rem; color:var(--mut);">コントラスト (<span id="val-contrast">0</span>)</label>
-            <input type="range" id="range-contrast" min="-50" max="50" value="0" style="width:100%; margin-top:8px;" oninput="document.getElementById('val-contrast').textContent=this.value">
-          </div>
-          <div>
-            <label style="font-weight:bold; font-size:0.9rem; color:var(--mut);">鮮やかさ/彩度 (<span id="val-sat">0</span>)</label>
-            <input type="range" id="range-sat" min="-50" max="50" value="0" style="width:100%; margin-top:8px;" oninput="document.getElementById('val-sat').textContent=this.value">
-          </div>
-          <div>
-            <label style="font-weight:bold; font-size:0.9rem; color:var(--mut);">特殊エフェクト</label>
-            <select id="select-effect" style="width:100%; padding:8px; margin-top:8px; border-radius:6px; border:1px solid var(--brd);">
-              <option value="">なし</option>
-              <option value="e_make_up:50">✨ 美肌（シミ・シワ・くすみ補正）</option>
-              <option value="e_grayscale">白黒(モノクロ)</option>
-              <option value="e_sepia">レトロ(セピア)</option>
-              <option value="e_blur:300">ぼかし(プライバシー保護)</option>
-              <option value="e_negate">反転(ネガ)</option>
-            </select>
-          </div>
-        </div>
-        <button type="button" id="custom-apply-btn" style="margin-top:20px; width:100%; padding:12px; background:var(--pri); color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">2. この設定でプレビューを更新する</button>
-      </div>
-
-      <div id="custom-result" style="display:none; text-align:center; padding-top:10px;">
-        <img id="custom-img" style="max-height:400px; max-width:100%; border-radius:8px; border:1px solid var(--brd); box-shadow:0 4px 6px rgba(0,0,0,0.1); transition: opacity 0.3s;">
-        <br>
-        <a id="custom-dl" download="custom_edited.jpg" target="_blank" style="display:inline-block; margin-top:15px; padding:10px 20px; background:#10b981; color:white; border-radius:8px; font-weight:bold; text-decoration:none;">保存（ダウンロード）</a>
-      </div>
-    </div>
-
     <div class="card col-span-3" style="border: 2px dashed #8b5cf6;">
       <div class="card-header" style="color: #8b5cf6;"><span class="card-icon" style="background: #8b5cf6; color: white;">✨</span> Gemini AI スマート画像補正 (プロンプトで指示)</div>
       ${!hasGeminiKey ? html`<div style="background:#fee2e2; color:#ef4444; padding:10px; border-radius:8px; font-size:0.9rem; margin-bottom:15px; text-align:center; font-weight:bold;">⚠️ Gemini APIキーが設定されていません。Cloudflareダッシュボードの環境変数を確認してください。</div>` : ''}
@@ -178,133 +122,6 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
   </div></main>
 
   <script>
-    // =========================================================================
-    // ★★★ 共通設定：ここにCloudinaryの設定を入力してください ★★★
-    // =========================================================================
-    const CLOUDINARY_CLOUD_NAME = 'dzjo6duru'; 
-    const CLOUDINARY_UPLOAD_PRESET = 'ml_default'; 
-    
-    function checkCloudinaryConfig() {
-      if (CLOUDINARY_CLOUD_NAME.includes('ここ') || CLOUDINARY_UPLOAD_PRESET.includes('ここ')) {
-        alert('【エラー】Cloudinaryの設定が行われていません！\\nコード内の CLOUDINARY_CLOUD_NAME と CLOUDINARY_UPLOAD_PRESET をご自身のIDに書き換えてください。');
-        return false;
-      }
-      return true;
-    }
-
-    // --- ① AIお任せ 一括補正機能 ---
-    document.getElementById('optimize-btn').addEventListener('click', async function(e) {
-      e.preventDefault();
-      if (!checkCloudinaryConfig()) return;
-
-      const fileInput = document.getElementById('optimize-input');
-      const files = fileInput.files;
-      if (files.length === 0) return alert('画像を選択してください。');
-
-      const btn = document.getElementById('optimize-btn');
-      btn.disabled = true;
-      const gallery = document.getElementById('optimize-gallery');
-      gallery.innerHTML = '';
-      document.getElementById('optimize-result').style.display = 'block';
-
-      try {
-        for (let i = 0; i < files.length; i++) {
-          btn.textContent = "⏳ " + files.length + "枚中 " + (i + 1) + "枚目をAI補正中...";
-          const formData = new FormData();
-          formData.append('file', files[i]);
-          formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-          
-          const res = await fetch("https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD_NAME + "/image/upload", { method: 'POST', body: formData });
-          const data = await res.json();
-          if (!res.ok) throw new Error((data.error && data.error.message) || '通信に失敗しました。');
-          
-          const optimizedUrl = data.secure_url.replace('/upload/', '/upload/e_improve/');
-          const downloadUrl = data.secure_url.replace('/upload/', '/upload/e_improve,fl_attachment/');
-          
-          const div = document.createElement('div');
-          div.style.cssText = "display:flex; flex-direction:column; align-items:center; background:#f8fafc; padding:10px; border-radius:12px; border:1px solid var(--brd);";
-          div.innerHTML = '<img src="' + optimizedUrl + '" style="max-height:180px; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"><a href="' + downloadUrl + '" target="_blank" download="optimized.jpg" style="margin-top:10px; padding:8px 16px; background:#10b981; color:white; border-radius:6px; font-weight:bold; text-decoration:none; font-size:0.9rem;">ダウンロード</a>';
-          gallery.appendChild(div);
-        }
-        btn.textContent = '✨ 一括AI補正完了！';
-      } catch (err) {
-        alert("エラー: " + err.message);
-        btn.textContent = '一括AI補正を実行';
-      } finally {
-        setTimeout(function() { btn.textContent = '一括AI補正を実行'; btn.disabled = false; fileInput.value = ''; }, 3000);
-      }
-    });
-
-    // --- ② カスタム画像編集機能（手動スライダー調整＆美肌） ---
-    let customBaseUrl = "";
-    let customFileName = "";
-
-    document.getElementById('custom-upload-btn').addEventListener('click', async function(e) {
-      e.preventDefault();
-      if (!checkCloudinaryConfig()) return;
-
-      const fileInput = document.getElementById('custom-input');
-      if (!fileInput.files[0]) return alert('画像を選択してください。');
-
-      const btn = document.getElementById('custom-upload-btn');
-      btn.textContent = '⏳ 読み込み中...';
-      btn.disabled = true;
-
-      try {
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-        formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-
-        const res = await fetch("https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD_NAME + "/image/upload", { method: 'POST', body: formData });
-        const data = await res.json();
-        if (!res.ok) throw new Error((data.error && data.error.message) || '通信に失敗しました。');
-
-        const urlParts = data.secure_url.split('/upload/');
-        customBaseUrl = urlParts[0] + '/upload/';
-        customFileName = urlParts[1];
-
-        document.getElementById('custom-img').src = data.secure_url;
-        document.getElementById('custom-dl').href = customBaseUrl + "fl_attachment/" + customFileName;
-        document.getElementById('custom-controls').style.display = 'block';
-        document.getElementById('custom-result').style.display = 'block';
-        
-        btn.textContent = '✅ 読み込み完了！下で調整してください';
-      } catch (err) {
-        alert("エラー: " + err.message);
-        btn.textContent = '1. 画像を読み込む';
-      } finally {
-        setTimeout(function() { btn.textContent = '1. 画像を読み込む'; btn.disabled = false; }, 3000);
-      }
-    });
-
-    document.getElementById('custom-apply-btn').addEventListener('click', function(e) {
-      e.preventDefault();
-      if(!customBaseUrl) return;
-
-      const b = document.getElementById('range-bright').value;
-      const c = document.getElementById('range-contrast').value;
-      const s = document.getElementById('range-sat').value;
-      const ef = document.getElementById('select-effect').value;
-
-      let transforms = [];
-      if(b != 0) transforms.push('e_brightness:' + b);
-      if(c != 0) transforms.push('e_contrast:' + c);
-      if(s != 0) transforms.push('e_saturation:' + s);
-      if(ef) transforms.push(ef);
-
-      let transformStr = transforms.length > 0 ? transforms.join(',') + '/' : '';
-
-      const newUrl = customBaseUrl + transformStr + customFileName;
-      const dlUrl = customBaseUrl + transformStr + "fl_attachment/" + customFileName;
-
-      const imgEl = document.getElementById('custom-img');
-      imgEl.style.opacity = '0.4'; 
-      imgEl.onload = () => imgEl.style.opacity = '1';
-      imgEl.src = newUrl;
-      
-      document.getElementById('custom-dl').href = dlUrl;
-    });
-
     // --- ③ Gemini AI スマート画像補正 ---
     document.getElementById('smart-btn').addEventListener('click', async function(e) {
       e.preventDefault();
@@ -342,7 +159,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       }
     });
 
-    // --- ★ 自作APIを使って時刻同期（外部API依存を完全に解消） ---
+    // --- ★ 自作APIを使って時刻同期 ---
     let timeOffsetMs = 0;
     async function syncTimeAPI(lat, lng) {
       const old = ['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];
@@ -369,7 +186,7 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
     }
     setInterval(updateClock, 1000); updateClock();
 
-    async function fetchW(lat,lng,loc){try{const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lng + '&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4');const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h='<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">' + ic(d.weathercode[0]) + '</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">' + Math.round(d.temperature_2m_max[0]) + '°</span> / <span style="color:#3b82f6;font-weight:bold;">' + Math.round(d.temperature_2m_min[0]) + '°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 ' + d.precipitation_probability_max[0] + '%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+='<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">' + (dt.getMonth()+1) + '/' + dt.getDate() + '</div><div style="font-size:1.5rem;margin:4px 0;">' + ic(d.weathercode[i]) + '</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">' + Math.round(d.temperature_2m_max[i]) + '°</span> <span style="color:#3b82f6;">' + Math.round(d.temperature_2m_min[i]) + '°</span></div></div>';}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent='天気予報 (' + loc + ')';}catch(e){}}
+    async function fetchW(lat,lng,loc){try{const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lng + '&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=4');const data=await r.json();const ic=c=>(c<=1?'☀️':c<=3?'⛅':c<=48?'☁️':c<=55?'🌧️':c<=65?'☔':c<=77?'❄️':c<=82?'🌦️':'⛈️');const d=data.daily;let h='<div style="font-size:0.9rem;"><div style="display:flex;align-items:center;justify-content:space-between;background:var(--pril);padding:12px;border-radius:8px;margin-bottom:12px;"><div style="font-size:2.5rem;line-height:1;">' + ic(d.weathercode[0]) + '</div><div style="text-align:right;"><div style="font-weight:bold;font-size:1.1rem;">今日</div><div style="margin:4px 0;"><span style="color:#ef4444;font-weight:bold;">' + Math.round(d.temperature_2m_max[0]) + '°</span> / <span style="color:#3b82f6;font-weight:bold;">' + Math.round(d.temperature_2m_min[0]) + '°</span></div><div style="font-size:0.8rem;color:var(--mut);font-weight:bold;">降水 ' + d.precipitation_probability_max[0] + '%</div></div></div><div style="display:flex;gap:8px;justify-content:space-between;">';for(let i=1;i<=3;i++){const dt=new Date(d.time[i]);h+='<div style="flex:1;background:#f8fafc;padding:8px 4px;border-radius:8px;text-align:center;border:1px solid var(--brd);"><div style="font-size:0.8rem;font-weight:bold;color:var(--mut);">' + (dt.getMonth()+1) + '/' + dt.getDate() + '</div><div style="font-size:1.5rem;margin:4px 0;">' + ic(d.weathercode[i]) + '</div><div style="font-size:0.8rem;font-weight:bold;"><span style="color:#ef4444;">' + Math.round(d.temperature_2m_max[i]) + '°</span> <span style="color:#3b82f6;">' + Math.round(d.temperature_2m_min[i]) + '°</span></div></div>';}document.getElementById('weather-widget').innerHTML=h+'</div></div>';document.getElementById('weather-title').textContent='天気予報 (' + loc + ')';}catch(e){}}
     
     if(navigator.geolocation){
       const s = async (p) => {
