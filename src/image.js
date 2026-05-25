@@ -6,8 +6,8 @@ export function setupImage(app) {
       if (!file) return c.json({ error: '画像ファイルが見つかりません' }, 400);
 
       // ★ ご自身のCloudinary情報を入れてください
-      const CLOUD_NAME = 'ここにCloud Nameを入力'; 
-      const UPLOAD_PRESET = 'ここにUpload preset nameを入力'; 
+      const CLOUD_NAME = 'dzjo6duru'; 
+      const UPLOAD_PRESET = 'ml_default'; 
 
       const formData = new FormData();
       formData.append('file', file);

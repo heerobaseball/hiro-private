@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  mypage-app:
+    build: .
+    ports:
+      - "8787:8787"
+    # ★ ここが超重要！PCのフォルダとコンテナの中身を同期（リアルタイム反映）させる設定
+    volumes:
+      - .:/app
+      - /app/node_modules # コンテナ内のモジュールは上書きしないよう保護
+    # コンテナのターミナルで対話的な操作を可能にする設定
+    stdin_open: true
+    tty: true
