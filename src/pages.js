@@ -144,6 +144,21 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       </div>
     </div>
 
+    <div class="card col-span-3" style="border: 2px dashed #8b5cf6;">
+      <div class="card-header" style="color: #8b5cf6;"><span class="card-icon" style="background: #8b5cf6; color: white;">✨</span> Gemini AI スマート画像補正 (プロンプトで指示)</div>
+      <div style="display:flex; flex-wrap:wrap; gap:15px; align-items:center;">
+        <input type="file" id="smart-input" accept="image/*" style="flex-grow:1; padding:10px; border:1px solid var(--brd); border-radius:8px; cursor:pointer;">
+        <input type="text" id="smart-prompt" placeholder="例: 画像を明るくして、セピア調にして" style="flex-grow:2; padding:10px; border:1px solid var(--brd); border-radius:8px;">
+        <button type="button" id="smart-btn" style="padding:12px 24px; background:#8b5cf6; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">Geminiで補正を実行</button>
+      </div>
+      <div id="smart-result" style="display:none; text-align:center; margin-top:20px; padding-top:20px; border-top:1px solid var(--brd);">
+        <div style="font-size:0.9rem; font-weight:bold; color:var(--mut); margin-bottom:5px;">適用されたパラメータ: <span id="smart-params" style="color:#8b5cf6;"></span></div>
+        <img id="smart-img" style="max-height:400px; max-width:100%; border-radius:8px; border:1px solid var(--brd); box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+        <br>
+        <a id="smart-dl" download="smart_edited.jpg" target="_blank" style="display:inline-block; margin-top:15px; padding:10px 20px; background:#8b5cf6; color:white; border-radius:8px; font-weight:bold; text-decoration:none;">保存（ダウンロード）</a>
+      </div>
+    </div>
+
     <div class="card col-span-3"><div class="card-header" style="justify-content:space-between; width:100%;"><div><span class="card-icon">🗺️</span> トラッカー</div><input type="date" value="${tDate}" onchange="window.location.href='/?date='+this.value" style="padding:6px 12px; border:1px solid var(--brd); border-radius:8px; font-weight:bold; outline:none;"></div><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><div style="font-weight:bold; color:var(--mut);">総移動距離: <span id="total-distance" style="color:var(--pri); font-size:1.4rem;">0</span> km</div><button onclick="manualCheckin(event)" style="padding:10px 20px; background:var(--btn); color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">📍 今ここを記録する</button></div><div id="map" style="height:400px; border-radius:12px; border:1px solid var(--brd); position:relative; overflow:hidden;">${!gApiKey?html`<div style="position:absolute;inset:0;background:rgba(255,255,255,0.9);z-index:10;display:flex;align-items:center;justify-content:center;flex-direction:column;"><h3>⚠️ APIキー未設定</h3></div>`:''}</div><div style="margin-top:15px; max-height:250px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">${mapPts.map(p => { const d = new Date(p.time+9*3600000); return html`<div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:#f8fafc; border-radius:8px; border:1px solid var(--brd); font-size:0.9rem;"><div style="display:flex; align-items:flex-start; gap:8px; overflow:hidden; flex:1;"><span style="font-size:1.2rem;">${p.type==='checkin'?'📍':'📝'}</span><b style="min-width:40px; margin-top:2px;">${d.getUTCHours()}:${String(d.getUTCMinutes()).padStart(2,'0')}</b><div style="display:flex; flex-direction:column; overflow:hidden; flex:1;"><span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.type==='diary'?p.content.replace(/\n/g,' '):'現在地'}</span>${p.locName?raw(`<div style="font-size:0.75rem; color:#3b82f6; font-weight:bold; margin-top:2px;">📍 ${p.locName}</div>`):''}</div></div><form method="POST" action="${p.type==='checkin'?'/api/checkin/delete':'/diary/delete'}" style="margin:0; flex-shrink:0; padding-left:10px;" onsubmit="return confirm('削除しますか？');"><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="date" value="${tDate}"><button type="submit" style="background:none; border:none; color:#ef4444; font-size:1.4rem; cursor:pointer; font-weight:bold;">×</button></form></div>`; })}</div></div>
   </div></main>
 
@@ -273,6 +288,43 @@ ${gApiKey ? html`<script src="https://maps.googleapis.com/maps/api/js?key=${gApi
       imgEl.src = newUrl;
       
       document.getElementById('custom-dl').href = dlUrl;
+    });
+
+    // --- ③ Gemini AI スマート画像補正 ---
+    document.getElementById('smart-btn').addEventListener('click', async function(e) {
+      e.preventDefault();
+      
+      const fileInput = document.getElementById('smart-input');
+      const promptInput = document.getElementById('smart-prompt');
+      if (!fileInput.files[0]) return alert('画像を選択してください。');
+
+      const btn = document.getElementById('smart-btn');
+      btn.textContent = '⏳ AIが考え中... (少し時間がかかります)';
+      btn.disabled = true;
+
+      try {
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        if (promptInput.value) {
+          formData.append('prompt', promptInput.value);
+        }
+
+        const res = await fetch("/api/optimize-smart", { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '通信に失敗しました。');
+
+        document.getElementById('smart-img').src = data.optimizedUrl;
+        document.getElementById('smart-dl').href = data.downloadUrl;
+        document.getElementById('smart-params').textContent = data.appliedTransformations;
+        document.getElementById('smart-result').style.display = 'block';
+
+        btn.textContent = '✨ 補正完了！';
+      } catch (err) {
+        alert("エラー: " + err.message);
+        btn.textContent = 'Geminiで補正を実行';
+      } finally {
+        setTimeout(function() { btn.textContent = 'Geminiで補正を実行'; btn.disabled = false; }, 3000);
+      }
     });
 
     // --- ★ 自作APIを使って時刻同期（外部API依存を完全に解消） ---

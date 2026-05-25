@@ -15,3 +15,4 @@ bucket_name = "my-images"
 
 [vars]
 GOOGLE_MAPS_API_KEY = "AIzaSyDrkF2r6M_CQdjrTgk1awz6iQBsPptWSV4"
+GEMINI_API_KEY = "AIzaSyCoqgrsmFNM0VzkLMIZi7Alr2zs-8Jq4to"
